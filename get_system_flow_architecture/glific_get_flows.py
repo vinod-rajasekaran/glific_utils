@@ -2,7 +2,7 @@
 """Fetch all flows from a Glific instance, including each flow's nodes and edges.
 
 Usage (put the variables in the repo-root .env, see .env.example, or export them):
-  export GLIFIC_URL=https://api.yourorg.tides.coloredcow.com   # your Glific API host
+  export GLIFIC_URL=https://api.yourorg.glific.com   # your Glific API host
   export GLIFIC_PHONE=91XXXXXXXXXX
   export GLIFIC_PASSWORD=secret
   python3 glific_get_flows.py --redact old/flows.json   # blank credentials in an earlier export

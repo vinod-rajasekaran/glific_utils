@@ -32,7 +32,7 @@ cp .env.example .env    # then edit .env with your values
 The scripts load `.env` automatically. It is git-ignored, so it is never committed. Variables already set in your shell take precedence over `.env`. You can also skip the file and export the variables directly:
 
 ```bash
-export GLIFIC_URL=https://api.yourorg.tides.coloredcow.com   # your Glific API host (no trailing /api)
+export GLIFIC_URL=https://api.yourorg.glific.com   # your Glific API host (no trailing /api)
 export GLIFIC_PHONE=91XXXXXXXXXX                             # login phone number, with country code
 export GLIFIC_PASSWORD=secret
 ```
