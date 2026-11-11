@@ -1,6 +1,8 @@
-# Flow map prompt (spec)
+# Flow map spec
 
-`render_architecture.py` implements this spec. The settings map to options of `build_flow_architecture.py`:
+This is the written spec for the flow-map page. It is phrased as a prompt, but it is **implemented in Python** by `render_architecture.py` — running the scripts calls no LLM and needs no API key. The spec is kept as documentation, and as an alternative way to build the page by hand by pasting it into an LLM with the two JSON files. The two are kept in sync by convention.
+
+The settings map to options of `build_flow_architecture.py`:
 
 | Setting | Option | Environment variable |
 |---|---|---|

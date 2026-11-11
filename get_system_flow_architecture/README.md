@@ -7,7 +7,11 @@ Extracts every flow and trigger from a Glific instance, so you can map how the c
 | [`build_flow_architecture.py`](build_flow_architecture.py) | **Runs everything:** pulls flows and triggers, then builds the HTML map | all three files below |
 | [`glific_get_flows.py`](glific_get_flows.py) | Every **active** flow, with its full definition (nodes and edges) | `flows.json` |
 | [`glific_get_triggers.py`](glific_get_triggers.py) | Every **trigger** (scheduled flow starts), active and inactive | `triggers.json` |
-| [`render_architecture.py`](render_architecture.py) | Turns the two JSON files into `flow_architecture.html` (no API calls), following [`PROMPT.md`](PROMPT.md) | `flow_architecture.html` |
+| [`render_architecture.py`](render_architecture.py) | Turns the two JSON files into `flow_architecture.html` (no API calls) | `flow_architecture.html` |
+
+[`PROMPT_SPEC.md`](PROMPT_SPEC.md) is the written spec for the page. It began as a prompt you could paste into an LLM, but **`render_architecture.py` implements it directly in Python** — no model or Claude key is involved when you run the scripts. The spec file is kept as documentation and as an alternative way to build the page by hand. The two stay in sync by convention, not automatically.
+
+This feature is not tied to any particular instance. Nothing in the code is hardcoded to a specific flow, tag, group, or template; the tag to focus on is the `--tag` input. It works on any Glific instance's export, as long as the JSON has the shape the Glific API returns (the node and action types documented below).
 
 ## Usage
 
@@ -30,7 +34,7 @@ Every run gets its own folder, so nothing is overwritten. Re-rendering with `--f
 
 ### Options
 
-These are the settings from the [flow map spec](PROMPT.md):
+These are the settings from the [flow map spec](PROMPT_SPEC.md):
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -65,7 +69,7 @@ Keep all the scripts in this folder: they import from each other.
 
 ## `flow_architecture.html`
 
-The page follows the [flow map spec](PROMPT.md), the prompt behind the hand-built reference page. All of it is generated from the two JSON files.
+The page follows the [flow map spec](PROMPT_SPEC.md) and is generated entirely from the two JSON files by `render_architecture.py` in Python. The spec reads like a prompt, but at runtime no LLM is called.
 
 **Input checks.** The two files are hashed, and the run stops if they're identical. It also stops if `flows.json` holds only metadata and no nodes, because links can't be derived without them. Flows and triggers are joined on `uuid`, never on name.
 

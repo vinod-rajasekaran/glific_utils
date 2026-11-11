@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pull all flows and triggers from Glific and build an HTML flow map (spec: PROMPT.md).
+"""Pull all flows and triggers from Glific and build an HTML flow map (spec: PROMPT_SPEC.md).
 
 Each run writes three files to a new folder, output/get_system_flow_architecture/<YYYY-MM-DD_HH-MM-SS>/:
   flows.json               every active flow with nodes and edges (credentials blanked)

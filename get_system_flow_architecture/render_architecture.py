@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render flows.json + triggers.json into one self-contained HTML flow map.
 
-Implements the spec in PROMPT.md. In short:
+Implements the spec in PROMPT_SPEC.md. In short:
   scope      flows carrying the tag, every flow they enter, and flows active triggers start
   columns    When it starts (triggers) | Entry flows | Journey | Shared flows
   wires      solid = enter_flow (counted), dashed = contact field written by 1-2 flows
