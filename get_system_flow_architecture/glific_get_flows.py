@@ -165,6 +165,36 @@ def _scrub(value):
     return value, 0
 
 
+def redact_url(url):
+    """Blank user:pass@ credentials and query-string values in a webhook URL.
+
+    Returns (new url, count). A URL that cannot be parsed (e.g. a malformed
+    password containing '/' or a bad port) is left unchanged rather than crashing
+    the export. IPv6 hosts keep their brackets.
+    """
+    if "@" not in url.split("?")[0] and "?" not in url:
+        return url, 0
+    try:
+        parts = urlsplit(url)
+        username, password, port = parts.username, parts.password, parts.port
+    except ValueError:
+        return url, 0  # malformed URL; leave it as-is
+    count = 0
+    if "://" in url and (password or (username and username != "redacted")):
+        host = parts.hostname or ""
+        if ":" in host:          # IPv6 literal; urlsplit strips the brackets
+            host = f"[{host}]"
+        host += f":{port}" if port else ""
+        parts = parts._replace(netloc=f"redacted@{host}")
+        count += 1
+    if parts.query:
+        original = parse_qsl(parts.query, keep_blank_values=True)
+        query = [(k, v if v.startswith("@") else REDACTED) for k, v in original]
+        parts = parts._replace(query=urlencode(query, safe="@[]"))
+        count += sum(1 for (_, old), (_, new) in zip(original, query) if old != new)
+    return urlunsplit(parts), count
+
+
 def redact_nodes(nodes):
     """Blank webhook credentials in place before anything is saved. Returns the count."""
     count = 0
@@ -179,18 +209,9 @@ def redact_nodes(nodes):
                         headers[name] = REDACTED
                         count += 1
             url = action.get("url")
-            if isinstance(url, str) and "@" in url.split("?")[0] and "://" in url:
-                parts = urlsplit(url)
-                if parts.password or (parts.username and parts.username != "redacted"):   # user:pass@host
-                    host = parts.hostname + (f":{parts.port}" if parts.port else "")
-                    action["url"] = url = urlunsplit(parts._replace(netloc=f"redacted@{host}"))
-                    count += 1
-            if isinstance(url, str) and "?" in url:
-                parts = urlsplit(url)
-                original = parse_qsl(parts.query, keep_blank_values=True)
-                query = [(k, v if v.startswith("@") else REDACTED) for k, v in original]
-                action["url"] = urlunsplit(parts._replace(query=urlencode(query, safe="@[]")))
-                count += sum(1 for (_, old), (_, new) in zip(original, query) if old != new)
+            if isinstance(url, str):
+                action["url"], n = redact_url(url)
+                count += n
             body = action.get("body")
             if isinstance(body, str):
                 action["body"], n = SECRET_FIELD.subn(lambda m: f'{m.group(1)}"{REDACTED}"', body)
