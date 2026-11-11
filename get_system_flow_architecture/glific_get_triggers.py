@@ -2,13 +2,14 @@
 """Fetch all triggers (scheduled flow starts: nudges, API data pulls, broadcasts) from Glific.
 
 Uses the same env vars as glific_get_flows.py (keep both files in the same folder):
-  python3 glific_get_triggers.py   # writes output/get_system_flow_architecture/<YYYY-MM-DD>/triggers.json
+  python3 glific_get_triggers.py   # writes output/get_system_flow_architecture/<YYYY-MM-DD_HH-MM-SS>/triggers.json
 
 Times (startAt, nextTriggerAt) are in UTC.
 """
 import sys
 
 from glific_get_flows import PAGE_SIZE, login, post, save_json
+from render_architecture import WEEKDAYS as FULL_WEEKDAYS
 
 TRIGGERS_QUERY = """
 query triggers($filter: TriggerFilter, $opts: Opts) {
@@ -31,7 +32,7 @@ query triggers($filter: TriggerFilter, $opts: Opts) {
 }
 """
 
-WEEKDAYS = {1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 7: "Sun"}
+WEEKDAYS = {k: v[:3] for k, v in FULL_WEEKDAYS.items()}  # one shared weekday map
 
 
 def describe(t):

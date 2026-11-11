@@ -29,7 +29,6 @@ except ImportError:  # Python < 3.9
     ZoneInfo = None
 
 WEEKDAYS = {1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday"}
-WEEKDAY_ABBR = {"mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6, "sun": 7}
 MAP_CAP = 14          # flow cards on the map; the rest go to the strip
 ROW_WORDS = 25        # word cap per card row
 GENERIC_RESULT = {"", "result", "webhook", "response", "results"}
@@ -69,7 +68,8 @@ def parse_tz(spec):
 # --------------------------------------------------------------------------- text helpers
 
 def esc(value):
-    return html.escape(str(value), quote=True)
+    """HTML-escape for text and attributes. Em dashes (banned on the page) become hyphens."""
+    return html.escape(str(value).replace("\u2014", "-"), quote=True)
 
 
 def typo(text):
@@ -170,9 +170,10 @@ def webhook_desc(action):
     url = str(action.get("url") or "").strip()
     if "://" in url:
         parts = urlsplit(url)
-        what = parts.netloc
+        what = (parts.hostname or "unknown host") + (f":{parts.port}" if parts.port else "")
         tail = [p for p in parts.path.split("/") if p]
-        if tail:
+        # Show the last path segment only when it is a plain word, never a token-like string
+        if tail and re.fullmatch(r"[A-Za-z][A-Za-z_-]{0,24}", tail[-1]):
             what += f" ({tail[-1]})"
     else:
         what = f"Glific function {url.split('?')[0] or 'unnamed'}"
@@ -467,6 +468,17 @@ class Model:
         for u in sorted(on_map - set(self.row), key=by_name):   # reached only from flows off the map
             place(u, 4 if u in shared else 3, 2)
 
+        # Trigger cards sit in column 1, in the row of their flow (or the next free row)
+        self.trig_row = {}
+        self.trigger_flows = entry_on + sorted((u for u in on_map if u not in entry_on and self.active_trig.get(u)),
+                                               key=lambda u: self.row[u])
+        for u in self.trigger_flows:
+            r = self.row[u]
+            while r in taken[1]:
+                r += 1
+            taken[1].add(r)
+            self.trig_row[u] = r
+
         self.on_map = on_map
         self.entry = entry_on
         self.strip = sorted(strip, key=by_name) + overflow
@@ -474,7 +486,7 @@ class Model:
 
     def edges(self):
         out = []
-        for u in self.entry:
+        for u in self.trigger_flows:
             out.append([f"t-{u}" if self.active_trig.get(u) else f"k-{u}", f"f-{u}", "s"])
         for v, cs in self.callers.items():
             for u in cs:
@@ -491,17 +503,9 @@ class Model:
 
 # --------------------------------------------------------------------------- trigger text
 
-def trigger_days(t, findings):
-    """Day numbers, cross-checked against the schedule string (the string wins)."""
-    days = [d for d in (t.get("days") or []) if isinstance(d, int)]
-    sched = str(t.get("schedule") or "").lower()
-    if (t.get("frequency") or "").lower() == "weekly" and " on " in sched:
-        head = sched.split(" from ")[0]
-        found = sorted({v for k, v in WEEKDAY_ABBR.items() if re.search(rf"\b{k}", head)})
-        if found and found != sorted(days):
-            findings.append(f"Trigger {t.get('name')}: day numbers {days} disagree with its schedule string, so the string is used.")
-            return found
-    return days
+def trigger_days(t):
+    """Weekday numbers from the structured days field (1 = Monday ... 7 = Sunday)."""
+    return [d for d in (t.get("days") or []) if isinstance(d, int)]
 
 
 def clock(tz, start, hour_utc=None):
@@ -521,7 +525,7 @@ def schedule_text(t, tz, findings):
     if freq == "daily":
         return f"Every day at {at}"
     if freq == "weekly":
-        days = trigger_days(t, findings)
+        days = trigger_days(t)
         return f"Every {join([WEEKDAYS.get(d, str(d)) for d in days], 7) or 'week, day not set,'} at {at}"
     if freq == "monthly":
         return f"Every month on day {join(map(str, t.get('days') or []), 31) or 'not set'} at {at}"
@@ -617,7 +621,9 @@ def flow_rows(m, u):
     if reads:
         notes.append(sentence(join(reads, 2)))
     trig = ""
-    if u not in m.active_trig and m.earlier_trig.get(u):
+    if m.active_trig.get(u) and u not in m.on_map:
+        trig = "Active: " + "; ".join(schedule_text(t, m.tz, m.findings) for t in m.active_trig[u])
+    elif u not in m.active_trig and m.earlier_trig.get(u):
         trig = "None active. " + earlier_runs(m.earlier_trig[u], m.tz)
     route_parts = []
     if s["waits"]:
@@ -674,14 +680,14 @@ def trigger_card(m, u, findings):
         body += row("Keyword", f"Also starts when a contact sends {join(kw, 20, 'or')}")
     if m.earlier_trig.get(u):
         body += f'<details><summary>Earlier runs</summary><p>{esc(typo(earlier_runs(m.earlier_trig[u], m.tz)))}</p></details>'
-    return (f'<article class="card trigger" data-id="t-{esc(u)}" tabindex="0" style="--r:{m.row[u]};--c:1">'
+    return (f'<article class="card trigger" data-id="t-{esc(u)}" tabindex="0" style="--r:{m.trig_row[u]};--c:1">'
             f'<div class="ch"><h3>{esc(schedule_title(ts))}</h3><span class="pill">Active</span></div>{body}</article>')
 
 
 def keyword_card(m, u):
     kw = m.flows[u].get("keywords") or []
     runs = f"When a contact sends {join(kw, 30, 'or')}"
-    return (f'<article class="card trigger" data-id="k-{esc(u)}" tabindex="0" style="--r:{m.row[u]};--c:1">'
+    return (f'<article class="card trigger" data-id="k-{esc(u)}" tabindex="0" style="--r:{m.trig_row[u]};--c:1">'
             f'<div class="ch"><h3>Keyword message</h3><span class="pill">Active</span></div>'
             f'{row("Runs", runs)}{row("Starts", m.name(u))}</article>')
 
@@ -745,7 +751,9 @@ def strip_section(m):
 
 def name_prefix(names_):
     for k in (2, 1):
-        c = Counter("_".join(re.split(r"[_ ]", n)[:k]) for n in names_ if len(re.split(r"[_ ]", n)) > k)
+        # re.split with a capture group keeps the separators: ['2025', '_', 'Pilot', '_', ...]
+        pieces = [re.split(r"([_ ])", n) for n in names_]
+        c = Counter("".join(p[:2 * k - 1]) for p in pieces if len(p) > 2 * k - 1)
         if c:
             p, n = c.most_common(1)[0]
             if n >= 2 and n * 2 >= len(names_):
@@ -871,7 +879,7 @@ def render_html(flows, triggers, settings=None, out=None):
     findings = m.findings
     edges = m.edges()
 
-    cards = [trigger_card(m, u, findings) if m.active_trig.get(u) else keyword_card(m, u) for u in m.entry]
+    cards = [trigger_card(m, u, findings) if m.active_trig.get(u) else keyword_card(m, u) for u in m.trigger_flows]
     cards += [flow_card(m, u) for u in sorted(m.on_map, key=lambda u: (m.col[u], m.row[u]))]
     cols_used = {m.col[u] for u in m.on_map}
     cards += [f'<p class="empty" style="--r:2;--c:{c}">None</p>' for c in (3, 4) if c not in cols_used]

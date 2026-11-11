@@ -6,7 +6,7 @@ Usage (put the variables in the repo-root .env, see .env.example, or export them
   export GLIFIC_PHONE=91XXXXXXXXXX
   export GLIFIC_PASSWORD=secret
   python3 glific_get_flows.py --redact old/flows.json   # blank credentials in an earlier export
-  python3 glific_get_flows.py   # writes output/get_system_flow_architecture/<YYYY-MM-DD>/flows.json
+  python3 glific_get_flows.py   # writes output/get_system_flow_architecture/<YYYY-MM-DD_HH-MM-SS>/flows.json
 """
 import json
 import os
@@ -14,16 +14,30 @@ import re
 import sys
 import urllib.request
 from collections import Counter
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 PAGE_SIZE = 100
 
-# Results go to output/<feature>/<today's date>/ at the repo root (git-ignored).
-# Re-running on the same day overwrites that day's files.
+# Each run writes to its own folder, output/<feature>/<YYYY-MM-DD_HH-MM-SS>/ at the repo root
+# (git-ignored), so earlier results are never overwritten.
 FEATURE = "get_system_flow_architecture"
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output" / FEATURE / date.today().isoformat()
+OUTPUT_ROOT = Path(__file__).resolve().parent.parent / "output" / FEATURE
+_run_dir = None
+
+
+def run_dir():
+    """This run's output folder, named by the local start time. Created once, never reused."""
+    global _run_dir
+    if _run_dir is None:
+        stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        candidate, n = OUTPUT_ROOT / stamp, 2
+        while candidate.exists():          # two runs in the same second
+            candidate, n = OUTPUT_ROOT / f"{stamp}-{n}", n + 1
+        candidate.mkdir(parents=True)
+        _run_dir = candidate
+    return _run_dir
 
 
 def load_env(path=Path(__file__).resolve().parent.parent / ".env"):
@@ -43,11 +57,6 @@ def load_env(path=Path(__file__).resolve().parent.parent / ".env"):
 
 
 load_env()
-
-# Keep flows whose tag label contains one of these (case-insensitive).
-# Untagged flows and tags containing "test" are dropped.
-INCLUDE_TAGS = ("pilot", "central", "common")
-EXCLUDE_TAGS = ("test",)
 
 FLOWS_QUERY = """
 query flows($filter: FlowFilter, $opts: Opts) {
@@ -88,10 +97,11 @@ def post(path, payload, token=None):
         return json.load(resp)
 
 
-def save_json(data, filename):
-    """Write data as JSON into OUTPUT_DIR and return the file path."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUTPUT_DIR / filename
+def save_json(data, filename, out_dir=None):
+    """Write data as JSON into out_dir (default: this run's folder) and return the file path."""
+    out_dir = out_dir or run_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / filename
     path.write_text(json.dumps(data, indent=2))
     return path
 
@@ -115,13 +125,6 @@ def get_all_flows(token):
         offset += PAGE_SIZE
 
 
-def wanted(flow):
-    label = ((flow.get("tag") or {}).get("label") or "").lower()
-    if not label or any(t in label for t in EXCLUDE_TAGS):
-        return False
-    return any(t in label for t in INCLUDE_TAGS)
-
-
 def find_definition(export, flow_uuid):
     """export_data contains the flow plus any sub-flows it calls; pick the matching one."""
     for item in export.get("flows", []):
@@ -135,9 +138,31 @@ REDACTED = "[redacted]"
 # Headers that never carry secrets; every other header value is blanked.
 SAFE_HEADERS = {"content-type", "accept"}
 # Webhook body fields whose literal values are blanked ("@..." expressions are kept).
-SECRET_FIELD = re.compile(r'("[^"]*(?:key|token|secret|passw|auth|credential|userid|user_id)[^"]*"\s*:\s*)"(?!@|\[redacted\]")[^"]*"', re.I)
+SECRET_FIELD = re.compile(
+    r'("[^"]*(?:key|token|secret|passw|auth|credential|userid|user_id)[^"]*"\s*:\s*)'
+    r'(?:"(?!@|\[redacted\]")(?:[^"\\]|\\.)*"|-?\d[\d.eE+-]*)', re.I)
 # Credential-shaped strings anywhere in a definition: JWTs and Bearer tokens.
-SECRET_VALUE = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|(?<=Bearer )[^\s\"']+", re.I)
+SECRET_VALUE = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|(?<=Bearer )(?!\[redacted\])[^\s\"'\\]+", re.I)
+
+
+def _scrub(value):
+    """Apply SECRET_VALUE to every string inside value. Returns (new value, count)."""
+    if isinstance(value, str):
+        return SECRET_VALUE.subn(REDACTED, value)
+    if isinstance(value, list):
+        out, total = [], 0
+        for item in value:
+            item, n = _scrub(item)
+            out.append(item)
+            total += n
+        return out, total
+    if isinstance(value, dict):
+        out, total = {}, 0
+        for k, item in value.items():
+            out[k], n = _scrub(item)
+            total += n
+        return out, total
+    return value, 0
 
 
 def redact_nodes(nodes):
@@ -154,19 +179,26 @@ def redact_nodes(nodes):
                         headers[name] = REDACTED
                         count += 1
             url = action.get("url")
+            if isinstance(url, str) and "@" in url.split("?")[0] and "://" in url:
+                parts = urlsplit(url)
+                if parts.password or (parts.username and parts.username != "redacted"):   # user:pass@host
+                    host = parts.hostname + (f":{parts.port}" if parts.port else "")
+                    action["url"] = url = urlunsplit(parts._replace(netloc=f"redacted@{host}"))
+                    count += 1
             if isinstance(url, str) and "?" in url:
                 parts = urlsplit(url)
-                query = [(k, v if v.startswith("@") else REDACTED) for k, v in parse_qsl(parts.query, keep_blank_values=True)]
+                original = parse_qsl(parts.query, keep_blank_values=True)
+                query = [(k, v if v.startswith("@") else REDACTED) for k, v in original]
                 action["url"] = urlunsplit(parts._replace(query=urlencode(query, safe="@[]")))
-                count += sum(1 for _, v in query if v == REDACTED)
+                count += sum(1 for (_, old), (_, new) in zip(original, query) if old != new)
             body = action.get("body")
             if isinstance(body, str):
                 action["body"], n = SECRET_FIELD.subn(lambda m: f'{m.group(1)}"{REDACTED}"', body)
                 count += n
-    # Safety net for tokens anywhere else in the definition
-    text, n = SECRET_VALUE.subn(REDACTED, json.dumps(nodes))
+    # Safety net for tokens anywhere else in the definition, string by string
+    cleaned, n = _scrub(nodes)
     if n:
-        nodes[:] = json.loads(text)
+        nodes[:] = cleaned
     return count + n
 
 
@@ -205,8 +237,7 @@ def fetch_flows(token):
     for label, n in tag_counts.most_common():
         print(f"  {label}: {n}", file=sys.stderr)
 
-    # To filter by tag again, use: [f for f in active_flows if wanted(f)]
-    all_flows = active_flows
+    all_flows = active_flows  # every active flow; the flow map narrows by tag later
     print(f"Pulling all {len(all_flows)} active flows\n", file=sys.stderr)
 
     for flow in all_flows:

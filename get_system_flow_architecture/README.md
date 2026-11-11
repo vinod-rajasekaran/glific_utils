@@ -17,16 +17,16 @@ Set the environment variables listed in the [main README](../README.md#setup), t
 python3 get_system_flow_architecture/build_flow_architecture.py --project "Phonewali Didi" --tag "2025 Pilot"
 ```
 
-This logs in once and writes all three files to a folder for the feature and today's date:
+This logs in once and writes all three files to a new folder for this run, named by the local date and time:
 
 ```
-output/get_system_flow_architecture/2026-11-11/
+output/get_system_flow_architecture/2026-11-11_21-43-05/
 ├── flows.json
 ├── triggers.json
 └── flow_architecture.html     # open in a browser
 ```
 
-Re-running on the same day overwrites that day's files. Earlier days are kept. The terminal shows the intermediate tables (flows in scope with their column, active triggers, data links) and a list of findings.
+Every run gets its own folder, so nothing is overwritten. Re-rendering with `--from-json` also creates a new run folder: it copies the two JSON files there and leaves the source folder untouched. The terminal shows the intermediate tables (flows in scope with their column, active triggers, data links) and a list of findings.
 
 ### Options
 
@@ -37,14 +37,14 @@ These are the settings from the [flow map spec](PROMPT.md):
 | `--project` | `GLIFIC_PROJECT`, else "Glific chatbot" | Project name for the title |
 | `--tag` | `GLIFIC_TAG`, else none | Flow tag to start from. Without it, the map starts from active triggers and keywords |
 | `--tz` | `GLIFIC_TZ`, else `Asia/Kolkata` | Display time zone: `"IST, UTC+5:30"` or an IANA name. UTC is always shown in brackets |
-| `--date` | today | Decides which triggers have ended (`YYYY-MM-DD`) |
+| `--date` | today, or the date the `--from-json` folder name starts with | Snapshot date (`YYYY-MM-DD`): decides which triggers have ended |
 | `--footer` | none | One sentence for the footer |
 | `--notes FILE` | none | Context notes (format below) |
 | `--from-json DIR` | | Rebuild only the HTML from JSON saved earlier, with no login or API calls |
 
 ```bash
 # Rebuild the HTML from an earlier run
-python3 get_system_flow_architecture/build_flow_architecture.py --from-json output/get_system_flow_architecture/2026-11-11 --tag "2025 Pilot"
+python3 get_system_flow_architecture/build_flow_architecture.py --from-json output/get_system_flow_architecture/2026-11-11_21-43-05 --tag "2025 Pilot"
 
 # Pull just one of the JSON files (written to the same dated folder)
 python3 get_system_flow_architecture/glific_get_flows.py
@@ -144,11 +144,11 @@ A JSON array with one object per flow:
 ### Notes
 
 - **Inactive flows are skipped.** To include them, remove `"isActive": True` from the filter in `get_all_flows`.
-- **Tag filtering is built in but turned off.** The `wanted()` function keeps flows whose tag contains `pilot`, `central` or `common`. It drops untagged flows and tags containing `test`. To use it, replace `all_flows = active_flows` with `all_flows = [f for f in active_flows if wanted(f)]`, and edit `INCLUDE_TAGS` / `EXCLUDE_TAGS` to suit your instance.
+- **All active flows are saved.** The flow map narrows them down with `--tag` when it renders the page.
 - **Credentials are blanked before saving.** Glific flow definitions hold webhook credentials in plain text. Before anything is written, the script replaces these with `[redacted]` and prints how many it blanked for each flow:
   - every webhook header value except `Content-Type` and `Accept` (for example `Authorization: Bearer ...`)
-  - query-string values in webhook URLs
-  - literal values of webhook body fields whose names contain `key`, `token`, `secret`, `passw`, `auth`, `credential` or `userid` (Glific `@...` expressions are kept)
+  - `user:password@` credentials and query-string values in webhook URLs
+  - literal values (strings or numbers) of webhook body fields whose names contain `key`, `token`, `secret`, `passw`, `auth`, `credential` or `userid` (Glific `@...` expressions are kept)
   - anything shaped like a JWT or `Bearer` token anywhere in the definition
 
   To clean a `flows.json` exported before this was added, run `python3 get_system_flow_architecture/glific_get_flows.py --redact path/to/flows.json`. It rewrites the file in place and is safe to run more than once. The redacted export can't be re-imported into Glific as a working flow, because the credentials are gone.
@@ -194,7 +194,7 @@ A JSON array with one object per trigger:
 
 ```python
 import json
-day = "output/get_system_flow_architecture/2026-11-11"   # the run you want
+day = "output/get_system_flow_architecture/2026-11-11_21-43-05"   # the run you want
 flows = {f["uuid"]: f for f in json.load(open(f"{day}/flows.json"))}
 for t in json.load(open(f"{day}/triggers.json")):
     tf = t.get("flow") or {}

@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 """Pull all flows and triggers from Glific and build an HTML flow map (spec: PROMPT.md).
 
-Writes three files to output/get_system_flow_architecture/<YYYY-MM-DD>/:
+Each run writes three files to a new folder, output/get_system_flow_architecture/<YYYY-MM-DD_HH-MM-SS>/:
   flows.json               every active flow with nodes and edges (credentials blanked)
   triggers.json            every trigger, with a readable schedule
   flow_architecture.html   the flow map
 
 Usage (same env vars as the other scripts; settings can also come from .env):
   python3 build_flow_architecture.py --project "My Bot" --tag "2025 Pilot"
-  python3 build_flow_architecture.py --from-json output/get_system_flow_architecture/2026-11-11 --tag "2025 Pilot"
-      # re-render the HTML from JSON saved earlier, without calling the API
+  python3 build_flow_architecture.py --from-json output/get_system_flow_architecture/2026-11-11_21-43-05 --tag "2025 Pilot"
+      # re-render from JSON saved earlier, without calling the API. The result goes to a new
+      # run folder with copies of the JSON; the source folder is not touched.
 """
 import argparse
 import hashlib
 import json
 import os
+import shutil
 import sys
 from datetime import date
 from pathlib import Path
 
-from glific_get_flows import OUTPUT_DIR, fetch_flows, login, save_json
+from glific_get_flows import fetch_flows, login, run_dir, save_json
 from glific_get_triggers import fetch_triggers
 from render_architecture import Settings, render_html
 
@@ -46,35 +48,49 @@ def main():
     p.add_argument("--project", default=os.environ.get("GLIFIC_PROJECT", "Glific chatbot"), help="project name for the page title")
     p.add_argument("--tag", default=os.environ.get("GLIFIC_TAG", ""), help="flow tag to start from, e.g. '2025 Pilot' (default: start from triggers and keywords)")
     p.add_argument("--tz", default=os.environ.get("GLIFIC_TZ", "Asia/Kolkata"), help="display timezone: 'IST, UTC+5:30' or an IANA name")
-    p.add_argument("--date", type=date.fromisoformat, default=date.today(), help="today's date, YYYY-MM-DD (decides which triggers have ended)")
+    p.add_argument("--date", type=date.fromisoformat, default=None,
+                   help="the snapshot date, YYYY-MM-DD: decides which triggers have ended "
+                        "(default: today, or the date the --from-json folder name starts with)")
     p.add_argument("--footer", default="", help="one sentence for the footer")
     p.add_argument("--notes", type=Path, help="text file with context notes (see README)")
     args = p.parse_args()
 
+    if args.date is None:
+        try:
+            args.date = date.fromisoformat(args.from_json.name[:10]) if args.from_json else date.today()
+        except ValueError:
+            args.date = date.today()
+
     if args.from_json:
-        out_dir = args.from_json
-        paths = (out_dir / "flows.json", out_dir / "triggers.json")
+        paths = (args.from_json / "flows.json", args.from_json / "triggers.json")
+        missing = [str(x) for x in paths if not x.is_file()]
+        if missing:
+            sys.exit(f"Not found: {', '.join(missing)}. --from-json needs a folder holding flows.json and triggers.json.")
         flows, triggers = (json.loads(x.read_text()) for x in paths)
         check_inputs(flows, triggers, paths)
+        out_dir = run_dir()
+        for x in paths:   # keep each run folder complete; the source folder stays as it was
+            shutil.copy2(x, out_dir / x.name)
+        print(f"Copied {args.from_json}/{{flows,triggers}}.json to {out_dir}", file=sys.stderr)
     else:
         token = login()
         flows = fetch_flows(token)
         triggers = fetch_triggers(token)
         check_inputs(flows, triggers)
-        print(f"Saved {save_json(flows, 'flows.json')}", file=sys.stderr)
-        print(f"Saved {save_json(triggers, 'triggers.json')}", file=sys.stderr)
-        out_dir = OUTPUT_DIR
+        out_dir = run_dir()
+        print(f"Saved {save_json(flows, 'flows.json', out_dir)}", file=sys.stderr)
+        print(f"Saved {save_json(triggers, 'triggers.json', out_dir)}", file=sys.stderr)
 
     settings = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
                         notes=args.notes.read_text() if args.notes else "")
     page, findings = render_html(flows, triggers, settings, out=sys.stderr)
-    out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / HTML_NAME
     path.write_text(page, encoding="utf-8")
     print("\nFindings:" if findings else "\nFindings: none", file=sys.stderr)
     for f in findings:
         print(f"  {f}", file=sys.stderr)
     print(f"\nSaved {path}", file=sys.stderr)
+    print(path.resolve())  # the only line on stdout, so wrappers can open the page
 
 
 if __name__ == "__main__":

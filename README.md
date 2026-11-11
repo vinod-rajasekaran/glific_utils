@@ -11,7 +11,7 @@ cp .env.example .env                                  # fill in URL, phone, pass
 ./flow_map.sh --project "My Bot" --tag "2025 Pilot"   # fetch flows and triggers, build the HTML, open it
 ```
 
-`flow_map.sh` runs the whole flow-architecture pipeline in one step. It works from any directory, and relative paths such as `--from-json output/...` are read from the repo root. Run `./flow_map.sh --help` for all options.
+`flow_map.sh` runs the whole flow-architecture pipeline in one step and opens the page it wrote. It works from any directory, and relative paths such as `--from-json ./export` are read from the directory you run it in. Run `./flow_map.sh --help` for all options.
 
 ## Features
 
@@ -39,7 +39,7 @@ export GLIFIC_PASSWORD=secret
 
 ## Output
 
-Every utility writes its results to `output/<feature>/<YYYY-MM-DD>/` at the repo root, whatever directory you run it from. For example: `output/get_system_flow_architecture/2026-11-11/`. Folders are created if they are missing. Re-running on the same day overwrites that day's files.
+Every run writes its results to a new folder, `output/<feature>/<YYYY-MM-DD_HH-MM-SS>/`, at the repo root, whatever directory you run it from. For example: `output/get_system_flow_architecture/2026-11-11_21-43-05/`. The folder is named by the local time the run started, and earlier runs are never overwritten. Delete old run folders when you no longer need them.
 
 `output/` is git-ignored (only `output/.gitkeep` is tracked), so exported data cannot be committed by accident.
 
