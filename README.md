@@ -1,2 +1,54 @@
-# glific_utils
+# Glific Utils
 
+Small Python utilities for pulling data out of a [Glific](https://glific.org) instance through its GraphQL API. Use them to audit, back up or analyse your chatbot setup.
+
+The scripts need only Python 3.9+ and its standard library. Nothing to install.
+
+## Quick start
+
+```bash
+cp .env.example .env                                  # fill in URL, phone, password
+./flow_map.sh --project "My Bot" --tag "2025 Pilot"   # fetch flows and triggers, build the HTML, open it
+```
+
+`flow_map.sh` runs the whole flow-architecture pipeline in one step. It works from any directory, and relative paths such as `--from-json output/...` are read from the repo root. Run `./flow_map.sh --help` for all options.
+
+## Features
+
+Each feature lives in its own folder with its own README.
+
+| Feature | What it does |
+|---|---|
+| [`get_system_flow_architecture/`](get_system_flow_architecture/) | Extracts all active flows (with nodes and edges) and all triggers (scheduled flow starts), and builds an HTML map of how they connect. Run `python3 get_system_flow_architecture/build_flow_architecture.py` |
+
+## Setup
+
+The scripts log in with a Glific staff account. The easiest way is a `.env` file at the repo root:
+
+```bash
+cp .env.example .env    # then edit .env with your values
+```
+
+The scripts load `.env` automatically. It is git-ignored, so it is never committed. Variables already set in your shell take precedence over `.env`. You can also skip the file and export the variables directly:
+
+```bash
+export GLIFIC_URL=https://api.yourorg.tides.coloredcow.com   # your Glific API host (no trailing /api)
+export GLIFIC_PHONE=91XXXXXXXXXX                             # login phone number, with country code
+export GLIFIC_PASSWORD=secret
+```
+
+## Output
+
+Every utility writes its results to `output/<feature>/<YYYY-MM-DD>/` at the repo root, whatever directory you run it from. For example: `output/get_system_flow_architecture/2026-11-11/`. Folders are created if they are missing. Re-running on the same day overwrites that day's files.
+
+`output/` is git-ignored (only `output/.gitkeep` is tracked), so exported data cannot be committed by accident.
+
+## Security
+
+- Never commit credentials. `.env` is already in `.gitignore`.
+- Webhook credentials (auth headers, API keys in URLs and bodies) are blanked before `flows.json` is saved. See the [feature README](get_system_flow_architecture/README.md#notes) for details.
+- The exported JSON can contain message content, contact fields and webhook URLs. It stays in the git-ignored `output/` folder, and so does the generated HTML. Treat these files as sensitive and don't share them.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

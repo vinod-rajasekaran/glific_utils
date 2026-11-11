@@ -2,14 +2,13 @@
 """Fetch all triggers (scheduled flow starts: nudges, API data pulls, broadcasts) from Glific.
 
 Uses the same env vars as glific_get_flows.py (keep both files in the same folder):
-  python3 glific_get_triggers.py > triggers.json
+  python3 glific_get_triggers.py   # writes output/get_system_flow_architecture/<YYYY-MM-DD>/triggers.json
 
 Times (startAt, nextTriggerAt) are in UTC.
 """
-import json
 import sys
 
-from glific_get_flows import PAGE_SIZE, login, post
+from glific_get_flows import PAGE_SIZE, login, post, save_json
 
 TRIGGERS_QUERY = """
 query triggers($filter: TriggerFilter, $opts: Opts) {
@@ -65,13 +64,19 @@ def get_all_triggers(token):
         offset += PAGE_SIZE
 
 
-if __name__ == "__main__":
-    triggers = get_all_triggers(login())
+def fetch_triggers(token):
+    """Fetch every trigger and add a readable `schedule` string to each."""
+    triggers = get_all_triggers(token)
     for t in triggers:
         t["schedule"] = describe(t)
-        flow = (t.get("flow") or {}).get("name", "<no flow>")
+        flow = (t.get("flow") or {}).get("name") or "<no flow>"
         status = "ACTIVE  " if t.get("isActive") else "inactive"
         print(f"{status} {t['name']} -> {flow} | {t['schedule']} | groups: {t.get('groups')}", file=sys.stderr)
-    print(json.dumps(triggers, indent=2))
+    return triggers
+
+
+if __name__ == "__main__":
+    triggers = fetch_triggers(login())
+    path = save_json(triggers, "triggers.json")
     active = sum(1 for t in triggers if t.get("isActive"))
-    print(f"Fetched {len(triggers)} triggers ({active} active)", file=sys.stderr)
+    print(f"Fetched {len(triggers)} triggers ({active} active) -> {path}", file=sys.stderr)
