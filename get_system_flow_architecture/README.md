@@ -9,6 +9,9 @@ Extracts every flow and trigger from a Glific instance, so you can map how the c
 | [`glific_get_triggers.py`](glific_get_triggers.py) | Every **trigger** (scheduled flow starts), active and inactive | `triggers.json` |
 | [`graph_layout.py`](graph_layout.py) | Layered left-to-right layout for `--layout graph` (no dependencies) | |
 | [`render_architecture.py`](render_architecture.py) | Turns the two JSON files into `flow_architecture.html` (no API calls) | `flow_architecture.html` |
+| [`usecase_facts.py`](usecase_facts.py) | With `--usecases`: cleaned facts about every flow, with IDs, for Claude | `claude_input.json` |
+| [`usecase_claude.py`](usecase_claude.py) | With `--usecases`: one Claude call ([prompt](USECASE_PROMPT.md)), then checks every reference against the facts | `claude_output.json`, `usecases.json` |
+| [`render_usecases.py`](render_usecases.py) | With `--usecases`: the page organised by use case | `flow_usecases.html` |
 
 [`PROMPT_SPEC.md`](PROMPT_SPEC.md) is the written spec for the page. It began as a prompt you could paste into an LLM, but **`render_architecture.py` implements it directly in Python** — no model or Claude key is involved when you run the scripts. The spec file is kept as documentation and as an alternative way to build the page by hand. The two stay in sync by convention, not automatically.
 
@@ -43,7 +46,9 @@ These are the settings from the [flow map spec](PROMPT_SPEC.md):
 | `--tag` | `GLIFIC_TAG`, else none | Flow tag to start from. Without it, the map starts from active triggers and keywords |
 | `--tz` | `GLIFIC_TZ`, else `Asia/Kolkata` | Display time zone: `"IST, UTC+5:30"` or an IANA name. UTC is always shown in brackets |
 | `--date` | today, or the date the `--from-json` folder name starts with | Snapshot date (`YYYY-MM-DD`): decides which triggers have ended |
-| `--layout` | `columns` | `columns` groups cards by role, `lanes` gives each journey its own lane with columns by step, `graph` draws small boxes laid out left to right with details on click, `all` writes every layout (as `flow_architecture.html`, `_lanes.html` and `_graph.html`) |
+| `--usecases` | `GLIFIC_USECASES=1`, else off | Also ask Claude to group every active flow into use cases and write `flow_usecases.html`. See [Use-case page](#use-case-page-flow_usecaseshtml) |
+| `--reuse-claude DIR` | | Use Claude's saved answer in `DIR/claude_output.json` instead of calling the API (implies `--usecases`) |
+| `--layout` | `GLIFIC_LAYOUT`, else `graph` | `columns` groups cards by role, `lanes` gives each journey its own lane with columns by step, `graph` draws small boxes laid out left to right with details on click, `all` writes every layout (as `flow_architecture.html`, `_lanes.html` and `_graph.html`) |
 | `--footer` | none | One sentence for the footer |
 | `--notes FILE` | none | Context notes (format below) |
 | `--from-json DIR` | | Rebuild only the HTML from JSON saved earlier, with no login or API calls |
@@ -68,6 +73,23 @@ Glific stores every message in BigQuery.
 Keep all the scripts in this folder: they import from each other.
 
 ---
+
+## Use-case page (`flow_usecases.html`)
+
+With `--usecases`, the run also asks Claude to read every active flow and work out the org's use cases. The page opens on a list of use cases, each with a short summary and pills (number of flows, how they start, outside systems, groups, things to check). Selecting one shows a graph of its flows beside a side pane with the story from the contact's side, how it works and what to watch. Selecting a box shows that flow's purpose, how it starts, where it leads, and its full card. Flows from other use cases that connect to this one appear faded; selecting one jumps to its use case.
+
+**What Claude decides, and what it does not.** Claude groups the flows, names the use cases, gives each flow a purpose and role (core, helper, shared, test, leftover) and writes the story and the concerns. Every number, schedule, group, link and arrow on the page comes from the export, not from Claude. Claude may refer to flows, groups, triggers, links and message excerpts only by the IDs in the facts, and must cite them as evidence with a confidence level (clear, likely, a guess). Python checks every reference: anything that does not match is removed, Claude gets one chance to fix its answer, and whatever is still wrong is listed under "Dropped by validation". Selecting a confidence badge shows the evidence behind a statement.
+
+**What is sent to the API.** `usecase_facts.py` builds the facts: for each flow its name, tag, keywords, how it starts, what it leads to, what it touches (webhook hosts, sheets, fields, groups, labels, tickets, staff alerts by template) and excerpts of its messages, interactive messages, template names and designers' sticky notes. Excerpts are cut to 200 characters. Staff contact names become "a staff contact", phone numbers and emails are masked, and links are cut to their host. Webhook credentials were already blanked by the exporter. The exact request is saved as `claude_input.json` in the run folder before it is sent.
+
+**Requirements and cost.** `pip install anthropic`, and an Anthropic API key in `ANTHROPIC_API_KEY` (or in `.env`). The step uses `claude-opus-5-5` in one call (two if a repair is needed); for an org with about 45 flows the input is roughly 30,000 tokens. Without the package or a key, or if Claude's answer is unusable, the run prints why and still writes the graph page.
+
+```bash
+./flow_map.sh --from-json output/get_system_flow_architecture/2026-11-13_20-49-46 --usecases
+./flow_map.sh --from-json output/get_system_flow_architecture/2026-11-13_20-49-46 --reuse-claude output/get_system_flow_architecture/2026-11-13_22-30-00
+```
+
+The run folder then also holds `claude_input.json` (what was sent), `claude_output.json` (Claude's raw answer), `usecases.json` (the validated answer and what was dropped) and `flow_usecases.html`.
 
 ## `flow_architecture.html`
 

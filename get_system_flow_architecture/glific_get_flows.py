@@ -32,9 +32,10 @@ def run_dir():
     global _run_dir
     if _run_dir is None:
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        candidate, n = OUTPUT_ROOT / stamp, 2
+        root = Path(os.environ.get("GLIFIC_OUTPUT_ROOT") or OUTPUT_ROOT)   # override used by the tests
+        candidate, n = root / stamp, 2
         while candidate.exists():          # two runs in the same second
-            candidate, n = OUTPUT_ROOT / f"{stamp}-{n}", n + 1
+            candidate, n = root / f"{stamp}-{n}", n + 1
         candidate.mkdir(parents=True)
         _run_dir = candidate
     return _run_dir
@@ -42,7 +43,7 @@ def run_dir():
 
 def load_env(path=Path(__file__).resolve().parent.parent / ".env"):
     """Load KEY=VALUE lines from the repo-root .env, if present. Shell variables win."""
-    if not path.is_file():
+    if not path.is_file() or os.environ.get("GLIFIC_NO_DOTENV"):
         return
     for line in path.read_text().splitlines():
         line = line.strip()

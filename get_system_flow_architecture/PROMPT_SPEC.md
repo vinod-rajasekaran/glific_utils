@@ -16,6 +16,8 @@ The settings map to options of `build_flow_architecture.py`:
 
 The prompt also works on its own: paste it into Claude with the two JSON files attached.
 
+The use-case page (`--usecases`) is different: it does call Claude, with the prompt in [`USECASE_PROMPT.md`](USECASE_PROMPT.md), and Python validates the answer before rendering it. See the feature README.
+
 ---
 
 Role and goal

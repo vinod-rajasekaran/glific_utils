@@ -2,7 +2,7 @@
 
 Small Python utilities for pulling data out of a [Glific](https://glific.org) instance through its GraphQL API. Use them to audit, back up or analyse your chatbot setup.
 
-The scripts need only Python 3.9+ and its standard library. Nothing to install.
+The scripts need only Python 3.9+ and its standard library. The optional use-case page (`--usecases`) also needs `pip install anthropic` and an Anthropic API key.
 
 ## Quick start
 
@@ -11,7 +11,7 @@ cp .env.example .env                                  # fill in URL, phone, pass
 ./flow_map.sh --project "My Bot" --tag "2025 Pilot"   # fetch flows and triggers, build the HTML, open it
 ```
 
-`flow_map.sh` runs the whole flow-architecture pipeline in one step and opens the page it wrote. It works from any directory, and relative paths such as `--from-json ./export` are read from the directory you run it in. Run `./flow_map.sh --help` for all options.
+`flow_map.sh` runs the whole flow-architecture pipeline in one step and opens the pages it wrote. Add `--usecases` to have Claude group the flows into use cases as well (see the [feature README](get_system_flow_architecture/README.md#use-case-page-flow_usecaseshtml)). It works from any directory, and relative paths such as `--from-json ./export` are read from the directory you run it in. Run `./flow_map.sh --help` for all options.
 
 ## Features
 
@@ -47,6 +47,7 @@ Every run writes its results to a new folder, `output/<feature>/<YYYY-MM-DD_HH-M
 
 - Never commit credentials. `.env` is already in `.gitignore`.
 - Webhook credentials (auth headers, API keys in URLs and bodies) are blanked before `flows.json` is saved. See the [feature README](get_system_flow_architecture/README.md#notes) for details.
+- `--usecases` sends cleaned facts and short message excerpts to the Anthropic API. Staff names, phone numbers, emails and links are stripped first, and the exact request is saved as `claude_input.json`. It only runs when you ask for it.
 - The exported JSON can contain message content, contact fields and webhook URLs. It stays in the git-ignored `output/` folder, and so does the generated HTML. Treat these files as sensitive and don't share them.
 
 ## License

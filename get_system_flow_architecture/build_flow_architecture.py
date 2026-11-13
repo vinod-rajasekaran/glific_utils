@@ -23,9 +23,13 @@ from pathlib import Path
 
 from glific_get_flows import fetch_flows, login, run_dir, save_json
 from glific_get_triggers import fetch_triggers
-from render_architecture import Settings, render_html
+from render_architecture import Model, Settings, render_html
+from render_usecases import render_usecase_page
+from usecase_claude import MODEL, PROMPT_PATH, UsecaseError, run_usecases, validate
+from usecase_facts import build_facts
 
 HTML_NAME = "flow_architecture.html"
+USECASE_NAME = "flow_usecases.html"
 
 
 def check_inputs(flows, triggers, paths=()):
@@ -51,10 +55,17 @@ def main():
     p.add_argument("--date", type=date.fromisoformat, default=None,
                    help="the snapshot date, YYYY-MM-DD: decides which triggers have ended "
                         "(default: today, or the date the --from-json folder name starts with)")
-    p.add_argument("--layout", choices=["columns", "lanes", "graph", "all"], default=os.environ.get("GLIFIC_LAYOUT", "columns"),
+    p.add_argument("--layout", choices=["columns", "lanes", "graph", "all"], default=os.environ.get("GLIFIC_LAYOUT", "graph"),
                    help="columns: cards grouped by role; lanes: one lane per journey, columns by step; "
                         "graph: small nodes laid out left to right, with details on click; "
-                        "all: write every layout to compare (default: columns)")
+                        "all: write every layout to compare (default: graph)")
+    p.add_argument("--usecases", action="store_true",
+                   default=os.environ.get("GLIFIC_USECASES", "").lower() in ("1", "true", "yes"),
+                   help="also ask Claude to group every active flow into use cases and write flow_usecases.html; "
+                        "sends cleaned facts and message excerpts to the Anthropic API (needs ANTHROPIC_API_KEY "
+                        "and pip install anthropic; env GLIFIC_USECASES=1)")
+    p.add_argument("--reuse-claude", metavar="DIR", type=Path,
+                   help="with the use-case page: read Claude's answer from DIR/claude_output.json instead of calling the API")
     p.add_argument("--footer", default="", help="one sentence for the footer")
     p.add_argument("--notes", type=Path, help="text file with context notes (see README)")
     args = p.parse_args()
@@ -98,10 +109,43 @@ def main():
     print("\nFindings:" if findings else "\nFindings: none", file=sys.stderr)
     for f in findings:
         print(f"  {f}", file=sys.stderr)
+    if args.usecases or args.reuse_claude:
+        page = usecase_step(args, flows, triggers, out_dir)
+        if page:
+            pages.insert(0, page)
     for path in pages:
         print(f"\nSaved {path}", file=sys.stderr)
     for path in pages:
-        print(path.resolve())  # the only lines on stdout (one per page), so wrappers can open them
+        print(path.resolve())  # the only lines on stdout (one per page, use-case page first), so wrappers can open them
+
+
+def usecase_step(args, flows, triggers, out_dir):
+    """Facts, Claude, validation and the use-case page. Returns its path, or None when skipped."""
+    st = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
+                  layout="graph", scope_all=True)
+    m = Model(flows, triggers, st)
+    facts = build_facts(m)
+    save_json({"model": MODEL, "system": PROMPT_PATH.read_text(encoding="utf-8"), "facts": facts}, "claude_input.json", out_dir)
+    try:
+        if args.reuse_claude:
+            raw = json.loads((args.reuse_claude / "claude_output.json").read_text(encoding="utf-8"))
+            validated, notes = validate(raw, facts)
+            print(f"Using Claude's saved answer from {args.reuse_claude}", file=sys.stderr)
+        else:
+            print(f"Asking Claude ({MODEL}) to read {len(facts['flows'])} flows; this can take a few minutes...", file=sys.stderr)
+            raw, validated, notes = run_usecases(facts)
+    except (UsecaseError, OSError, ValueError) as e:
+        print(f"\nThe use-case page skipped: {e}. The graph page was written as usual.", file=sys.stderr)
+        return None
+    save_json(raw, "claude_output.json", out_dir)
+    save_json(dict(validated, dropped=notes), "usecases.json", out_dir)
+    if notes:
+        print(f"\nValidation dropped {len(notes)} parts of Claude's answer (listed on the page):", file=sys.stderr)
+        for n in notes[:10]:
+            print(f"  {n}", file=sys.stderr)
+    path = out_dir / USECASE_NAME
+    path.write_text(render_usecase_page(m, facts, validated, notes, st), encoding="utf-8")
+    return path
 
 if __name__ == "__main__":
     main()
