@@ -7,6 +7,7 @@ Extracts every flow and trigger from a Glific instance, so you can map how the c
 | [`build_flow_architecture.py`](build_flow_architecture.py) | **Runs everything:** pulls flows and triggers, then builds the HTML map | all three files below |
 | [`glific_get_flows.py`](glific_get_flows.py) | Every **active** flow, with its full definition (nodes and edges) | `flows.json` |
 | [`glific_get_triggers.py`](glific_get_triggers.py) | Every **trigger** (scheduled flow starts), active and inactive | `triggers.json` |
+| [`graph_layout.py`](graph_layout.py) | Layered left-to-right layout for `--layout graph` (no dependencies) | |
 | [`render_architecture.py`](render_architecture.py) | Turns the two JSON files into `flow_architecture.html` (no API calls) | `flow_architecture.html` |
 
 [`PROMPT_SPEC.md`](PROMPT_SPEC.md) is the written spec for the page. It began as a prompt you could paste into an LLM, but **`render_architecture.py` implements it directly in Python** — no model or Claude key is involved when you run the scripts. The spec file is kept as documentation and as an alternative way to build the page by hand. The two stay in sync by convention, not automatically.
@@ -42,6 +43,7 @@ These are the settings from the [flow map spec](PROMPT_SPEC.md):
 | `--tag` | `GLIFIC_TAG`, else none | Flow tag to start from. Without it, the map starts from active triggers and keywords |
 | `--tz` | `GLIFIC_TZ`, else `Asia/Kolkata` | Display time zone: `"IST, UTC+5:30"` or an IANA name. UTC is always shown in brackets |
 | `--date` | today, or the date the `--from-json` folder name starts with | Snapshot date (`YYYY-MM-DD`): decides which triggers have ended |
+| `--layout` | `columns` | `columns` groups cards by role, `lanes` gives each journey its own lane with columns by step, `graph` draws small boxes laid out left to right with details on click, `all` writes every layout (as `flow_architecture.html`, `_lanes.html` and `_graph.html`) |
 | `--footer` | none | One sentence for the footer |
 | `--notes FILE` | none | Context notes (format below) |
 | `--from-json DIR` | | Rebuild only the HTML from JSON saved earlier, with no login or API calls |
@@ -73,7 +75,7 @@ The page follows the [flow map spec](PROMPT_SPEC.md) and is generated entirely f
 
 **Input checks.** The two files are hashed, and the run stops if they're identical. It also stops if `flows.json` holds only metadata and no nodes, because links can't be derived without them. Flows and triggers are joined on `uuid`, never on name.
 
-**Scope.** The map starts from flows carrying `--tag`. It adds every flow they start through "enter flow", marked "not tagged" when the tag is missing, and every flow an active trigger starts. A trigger counts as active only when `isActive` is true and its end date hasn't passed.
+**Scope.** The map starts from flows carrying `--tag`. It adds every flow they start through "enter flow", marked "not tagged" when the tag is missing, and every flow an active trigger starts. It then takes one step back: a flow anywhere in the account that starts a flow in scope is added, because it is connected even when its tag was missed. Its other starts are not followed, since callers of a shared flow can belong to other programmes. The Tagging gaps section names these flows. A trigger counts as active only when `isActive` is true and its end date hasn't passed.
 
 **The map** has four columns joined by wires, with each trigger card in the same row as its flow:
 
@@ -83,6 +85,10 @@ The page follows the [flow map spec](PROMPT_SPEC.md) and is generated entirely f
 | Entry flows | Flows with a trigger or keyword that no other flow in scope enters |
 | Journey | Flows that one other flow enters |
 | Shared flows | Flows entered by two or more flows |
+
+With `--layout lanes` the cards are regrouped so a path reads left to right. Each lane holds one journey: the entry flows that reach the same flows, through starts or data links, and everything they reach. The columns become steps, so a flow sits one column after the longest chain of starts that leads to it. A flow that starts nothing and is entered from more than one journey goes to a Shared flows lane at the bottom, and flows with no links share a last lane. On narrow screens the cards stack lane by lane.
+
+With `--layout graph` the map is a graph instead of a grid of cards. Each flow and trigger is a small box, and `graph_layout.py` lays them out left to right in layers: a flow sits one layer after the longest chain of starts or data hand-offs that leads to it, and each trigger sits just before its flow. Long edges run through the gaps between boxes. Each flow box lists in one line what the flow does (webhook, sends, waits, moves, alerts, sheet, unreachable step). A flow that no trigger, keyword or flow in the export starts gets a grey "No start found" box in front of it; it may be the opt-in or opt-out flow in Glific settings, or started by hand or through the API. Boxes for flows without the tag show the tag they do have. A contact group that an active schedule on the graph sends to gets a green box in the first column, when some flow adds contacts to it or removes them. Dotted arrows run from the group to its schedules, and faint dotted arrows run back from each flow that fills or empties the group; they light up when you point at either end. A flow outside the scope that adds contacts to such a group joins the graph, because it decides who the schedule reaches. Selecting a box opens its full card in a side panel. Edge labels give the number of places one flow starts another and the fields a data link hands over. On narrow screens the graph scrolls sideways.
 
 Solid wires are enter_flow actions. Dashed wires mean one flow sets a contact field that another reads in a router; they're drawn only when one or two flows write that field. The map holds at most 14 flow cards and the rest move to the strip below. Wires show at 1100px and wider. Below that the cards stack in two columns, or one, and each card's Starts row keeps the links readable.
 

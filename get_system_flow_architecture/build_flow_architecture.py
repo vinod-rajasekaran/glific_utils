@@ -4,7 +4,7 @@
 Each run writes three files to a new folder, output/get_system_flow_architecture/<YYYY-MM-DD_HH-MM-SS>/:
   flows.json               every active flow with nodes and edges (credentials blanked)
   triggers.json            every trigger, with a readable schedule
-  flow_architecture.html   the flow map
+  flow_architecture.html   the flow map (with --layout all, also flow_architecture_lanes.html and _graph.html)
 
 Usage (same env vars as the other scripts; settings can also come from .env):
   python3 build_flow_architecture.py --project "My Bot" --tag "2025 Pilot"
@@ -51,6 +51,10 @@ def main():
     p.add_argument("--date", type=date.fromisoformat, default=None,
                    help="the snapshot date, YYYY-MM-DD: decides which triggers have ended "
                         "(default: today, or the date the --from-json folder name starts with)")
+    p.add_argument("--layout", choices=["columns", "lanes", "graph", "all"], default=os.environ.get("GLIFIC_LAYOUT", "columns"),
+                   help="columns: cards grouped by role; lanes: one lane per journey, columns by step; "
+                        "graph: small nodes laid out left to right, with details on click; "
+                        "all: write every layout to compare (default: columns)")
     p.add_argument("--footer", default="", help="one sentence for the footer")
     p.add_argument("--notes", type=Path, help="text file with context notes (see README)")
     args = p.parse_args()
@@ -81,17 +85,23 @@ def main():
         print(f"Saved {save_json(flows, 'flows.json', out_dir)}", file=sys.stderr)
         print(f"Saved {save_json(triggers, 'triggers.json', out_dir)}", file=sys.stderr)
 
-    settings = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
-                        notes=args.notes.read_text() if args.notes else "")
-    page, findings = render_html(flows, triggers, settings, out=sys.stderr)
-    path = out_dir / HTML_NAME
-    path.write_text(page, encoding="utf-8")
+    layouts = ["columns", "lanes", "graph"] if args.layout == "all" else [args.layout]
+    pages = []
+    for i, layout in enumerate(layouts):
+        settings = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
+                            notes=args.notes.read_text() if args.notes else "", layout=layout)
+        page, findings = render_html(flows, triggers, settings, out=sys.stderr if i == 0 else None)
+        name = HTML_NAME if layout == layouts[0] else HTML_NAME.replace(".html", f"_{layout}.html")
+        path = out_dir / name
+        path.write_text(page, encoding="utf-8")
+        pages.append(path)
     print("\nFindings:" if findings else "\nFindings: none", file=sys.stderr)
     for f in findings:
         print(f"  {f}", file=sys.stderr)
-    print(f"\nSaved {path}", file=sys.stderr)
-    print(path.resolve())  # the only line on stdout, so wrappers can open the page
-
+    for path in pages:
+        print(f"\nSaved {path}", file=sys.stderr)
+    for path in pages:
+        print(path.resolve())  # the only lines on stdout (one per page), so wrappers can open them
 
 if __name__ == "__main__":
     main()

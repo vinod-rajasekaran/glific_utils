@@ -17,10 +17,12 @@ for arg in "$@"; do
   fi
 done
 
-# The build prints the page it wrote as its only stdout line; progress goes to stderr.
-page="$(python3 "$BUILD" "$@")"
+# The build prints each page it wrote on its own stdout line; progress goes to stderr.
+pages="$(python3 "$BUILD" "$@")"
 
-if [[ -f "$page" ]] && command -v open >/dev/null; then
-  open "$page"
-fi
+while IFS= read -r page; do
+  if [[ -f "$page" ]] && command -v open >/dev/null; then
+    open "$page"
+  fi
+done <<< "$pages"
 exit 0
