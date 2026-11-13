@@ -50,6 +50,7 @@ class Settings:
     footer: str = ""
     notes: str = ""                     # context notes text (see README for the format)
     layout: str = "columns"             # "columns" (by role) or "lanes" (one lane per journey, columns by step)
+    scope_all: bool = False             # every flow in the export, not just the tag and what it reaches
 
 
 def parse_tz(spec):
@@ -393,13 +394,22 @@ class Model:
                 self.findings.append(f"Active trigger {t.get('name')} has no target group.")
 
     def _scope(self):
+        self.missing_targets = defaultdict(set)
+        if self.st.scope_all:
+            self.scope = set(self.flows)
+            self.linked_in = set()
+            for u in self.flows:
+                for v, vname in self.sum[u]["starts"]:
+                    if v not in self.flows:
+                        self.missing_targets[vname].add(u)
+            self._callers()
+            return
         if self.st.tag:
             seeds = [u for u in self.flows if self.tagged(u)]
         else:
             seeds = [u for u in self.flows if self.flows[u].get("keywords")]
         seeds += list(self.active_trig)
         scope, stack = set(), list(dict.fromkeys(seeds))
-        self.missing_targets = defaultdict(set)
         while stack:
             u = stack.pop()
             if u in scope:
@@ -415,6 +425,10 @@ class Model:
         self.linked_in = {u for u in self.flows if u not in scope and any(v in scope for v, _ in self.sum[u]["starts"])}
         scope |= self.linked_in
         self.scope = scope
+        self._callers()
+
+    def _callers(self):
+        scope = self.scope
         self.callers = defaultdict(Counter)   # v -> {caller u: number of enter_flow actions}
         for u in scope:
             for v, _ in self.sum[u]["starts"]:
@@ -428,7 +442,7 @@ class Model:
                 writers[f].add(u)
         self.data_links = []          # (writer, reader, field)
         self.shared_fields = {}
-        for v in self.scope:
+        for v in sorted(self.scope, key=lambda u: (self.name(u).lower(), u)):
             for f in sorted(self.graphs[v].fields_read()):
                 w = writers.get(f, set()) - {v}
                 if not w:
@@ -522,13 +536,22 @@ class Model:
         overflow = sorted(order[GRAPH_CAP:], key=by_name)
         if overflow:
             self.findings.append(f"{plural(len(overflow), 'flow')} moved from the graph to the strip to keep it readable: {join(map(self.name, overflow), 8)}.")
-        self.on_map = on
         self.strip = sorted((u for u in sc if u not in on and u not in overflow), key=by_name) + overflow
+        self.graph_view(on, add_fillers=True)
+        self.strip = [u for u in self.strip if u not in self.on_map]
+
+    def graph_view(self, flow_ids, add_fillers=False):
+        """Put exactly these flows on the graph and work out their trigger, keyword, no-start and
+        group boxes. With add_fillers, flows outside the set that add contacts to a group a
+        schedule on the graph sends to are added too."""
+        on = set(flow_ids)
+        by_name = lambda u: self.name(u).lower()
+        self.on_map = on
         # Groups: a group that an active trigger on the graph sends to gets its own box, when some
         # flow adds contacts to it or removes them. Flows outside the scope that add contacts to it
         # join the graph, since they decide who the schedule reaches.
         targets = defaultdict(list)
-        for u in on:
+        for u in sorted(on, key=by_name):
             for t in self.active_trig.get(u, []):
                 for gname in names(t.get("groups")):
                     targets[gname].append(u)
@@ -540,7 +563,7 @@ class Model:
                     if gname not in targets:
                         continue
                     if u not in on:
-                        if direction != "into" or len(on) >= GRAPH_CAP:
+                        if not add_fillers or direction != "into" or len(on) >= GRAPH_CAP:
                             continue
                         on.add(u)
                         self.linked_group.add(u)
@@ -550,7 +573,6 @@ class Model:
                         movers[gname][direction].append(u)
         self.group_nodes = {gname: {"adds": movers[gname]["into"], "removes": movers[gname]["out of"], "triggers": targets[gname]}
                             for gname in sorted(movers)}
-        self.strip = [u for u in self.strip if u not in on]
 
         called = {u for u in on if any(c in on for c in self.callers[u])}
         # a keyword box only where the keyword is how the flow starts; otherwise its card lists the keywords
@@ -695,8 +717,9 @@ class Model:
             out += [[f"f-{u}", gid, "ga"] for u in info["adds"]]
             out += [[f"f-{u}", gid, "gr"] for u in info["removes"] if u not in info["adds"]]
             out += [[gid, f"t-{u}", "gt"] for u in info["triggers"]]
-        for v, cs in self.callers.items():
-            for u in cs:
+        key = lambda u: (self.name(u).lower(), u)
+        for v in sorted(self.callers, key=key):   # sorted, so the layout is the same on every run
+            for u in sorted(self.callers[v], key=key):
                 if u in self.on_map and v in self.on_map:
                     out.append([f"f-{u}", f"f-{v}", "s"])
         solid = {(a, b) for a, b, _ in out}
@@ -807,9 +830,9 @@ def flow_rows(m, u):
     move_txt = "; ".join(clauses)
     starts = Counter(name for v, name in s["starts"] if v != u)
     used = m.callers.get(u) or Counter()
-    used_txt = join([f"{m.name(c)}{times(n)}" for c, n in used.most_common()], 5)
+    used_txt = join([f"{m.name(c)}{times(n)}" for c, n in sorted(used.items(), key=lambda cn: (-cn[1], m.name(cn[0]).lower()))], 5)
     if used and sum(used.values()) > len(used):
-        used_txt = f"Called {sum(used.values())} times: " + join([f"{n} in {m.name(c)}" for c, n in used.most_common()], 5)
+        used_txt = f"Called {sum(used.values())} times: " + join([f"{n} in {m.name(c)}" for c, n in sorted(used.items(), key=lambda cn: (-cn[1], m.name(cn[0]).lower()))], 5)
     by_reader = defaultdict(list)
     for w, v, fld in m.data_links:
         if w == u:
@@ -1161,6 +1184,18 @@ def names_of(m, us):
 
 def graph_section(m, edges, findings):
     """The map drawn as a graph: small nodes, edges laid out left to right, details on click."""
+    svg, tpls = graph_svg(m, edges, findings)
+    html_ = ('<p class="ghint">Each box is a flow, and time runs left to right. Solid arrows start a flow, '
+             'dashed arrows hand over data through a contact field. Select a box to read what it does.</p>'
+             f'<div class="gscroll">{svg}</div>'
+             '<aside id="panel" class="panel" aria-live="polite" hidden><button type="button" class="close" aria-label="Close">\u00d7</button>'
+             '<div id="panel-body"></div></aside>' + "".join(tpls))
+    return html_, GRAPH_JS
+
+
+def graph_svg(m, edges, findings, ns="", faded=frozenset()):
+    """The graph as an SVG string plus one <template> per box holding its full card. Every id in
+    both is prefixed with ns, so several graphs can share a page. Flows in faded are drawn faded."""
     sizes, kinds = {}, {}
     def size(n):
         if n[0] in "tkx":
@@ -1171,7 +1206,7 @@ def graph_section(m, edges, findings):
     for a, b, k in edges:
         sizes[a], sizes[b] = size(a), size(b)
         kinds[(a, b)] = k
-    for u in m.on_map:
+    for u in sorted(m.on_map, key=lambda u: (m.name(u).lower(), u)):
         sizes.setdefault(f"f-{u}", size(f"f-{u}"))
     groups = list(m.group_nodes.items())
     # Edges into a group close loops in time (a flow adds contacts to the group its own schedule
@@ -1228,8 +1263,8 @@ def graph_section(m, edges, findings):
         else:
             label, full = "", f"Starts {m.name(b[2:])}"
         ecls = {"d": " data", "ga": " grp", "gr": " grp rm", "gt": " grp"}.get(k, "") + (" back" if (a, b) in g.reversed else "")
-        parts.append(f'<g class="edge{ecls}" data-from="{esc(a)}" data-to="{esc(b)}">'
-                     f'<title>{esc(typo(full))}</title><path d="{d}" marker-end="url(#gah)"/>')
+        parts.append(f'<g class="edge{ecls}" data-from="{esc(ns + a)}" data-to="{esc(ns + b)}">'
+                     f'<title>{esc(typo(full))}</title><path d="{d}" marker-end="url(#{ns}gah)"/>')
         if label:
             if (a, b) in g.reversed:
                 lx, ly, room = mid[0], mid[1] + 4, 200
@@ -1301,23 +1336,21 @@ def graph_section(m, edges, findings):
             txt = (f'<text class="tname" x="{x + 12:.1f}" y="{y + 21:.1f}">{esc(line1)}</text>'
                    f'<text class="tmeta" x="{x + 12:.1f}" y="{y + 40:.1f}">{esc(line2)}</text>')
             label = f"Trigger for {m.name(u)}"
-        parts.append(f'<g class="{cls}" data-id="{esc(n)}" tabindex="0" role="button" aria-label="{esc(label)}">'
+        if n.startswith("f-") and u in faded:
+            cls += " faded"
+        parts.append(f'<g class="{cls}" data-id="{esc(ns + n)}" tabindex="0" role="button" aria-label="{esc(label)}">'
                      f'<rect x="{x:.1f}" y="{y:.1f}" width="{w}" height="{h}" rx="10"/>{txt}</g>')
-        tpls.append(f'<template id="tpl-{esc(n)}">{card}</template>')
+        card = re.sub(r' data-id="[^"]*"', "", card)   # the box carries the id; the card copy must not
+        tpls.append(f'<template id="tpl-{esc(ns + n)}">{card}</template>')
 
-    svg = (f'<svg id="graph" viewBox="0 0 {g.width:.0f} {g.height:.0f}" width="{g.width:.0f}" height="{g.height:.0f}" '
+    svg = (f'<svg id="{ns}graph" class="fgraph" viewBox="0 0 {g.width:.0f} {g.height:.0f}" width="{g.width:.0f}" height="{g.height:.0f}" '
            f'style="--w:{g.width:.0f}px" role="group" aria-label="Flow graph">'
-           '<defs><marker id="gah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">'
+           f'<defs><marker id="{ns}gah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">'
            '<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>'
            + "".join(p for p in parts if not p.startswith('<g class="node'))   # edges first, so nodes sit on top
            + "".join(p for p in parts if p.startswith('<g class="node'))
            + "</svg>")
-    html_ = ('<p class="ghint">Each box is a flow, and time runs left to right. Solid arrows start a flow, '
-             'dashed arrows hand over data through a contact field. Select a box to read what it does.</p>'
-             f'<div class="gscroll">{svg}</div>'
-             '<aside id="panel" class="panel" aria-live="polite" hidden><button type="button" class="close" aria-label="Close">\u00d7</button>'
-             '<div id="panel-body"></div></aside>' + "".join(tpls))
-    return html_, GRAPH_JS
+    return svg, tpls
 
 # --------------------------------------------------------------------------- page
 
@@ -1508,37 +1541,37 @@ details p{margin:6px 0 0}
 .ctx .body p{margin:6px 0}
 .ghint{margin:0 0 12px;font-size:14px;color:var(--muted);max-width:90ch}
 .gscroll{margin-bottom:22px;overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
-#graph{display:block;width:100%;min-width:calc(var(--w) * .75);height:auto}
-#graph .edge path{fill:none;stroke:var(--wire);stroke-width:1.6;transition:opacity .15s,stroke .15s}
-#graph .edge.data path{stroke-dasharray:6 5}
-#graph .edge.hot path{stroke:var(--flow);stroke-width:2.6}
-#graph .edge.dim{opacity:.12}
-#graph .elabel{font-size:11.5px;fill:var(--muted);paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round}
-#graph .edge.hot .elabel{fill:var(--flow);font-weight:700}
-#graph .node{cursor:pointer;transition:opacity .15s}
-#graph .node rect{fill:var(--flow-bg);stroke:var(--flow);stroke-width:1.3}
-#graph .node.untagged rect{fill:var(--surface);stroke:var(--muted);stroke-dasharray:5 4}
-#graph .node.trig rect{fill:var(--trig-bg);stroke:var(--trig)}
-#graph .node.nostart rect{fill:var(--slate-bg);stroke:var(--slate);stroke-dasharray:3 3}
-#graph .node.grp rect{fill:var(--chat-bg);stroke:var(--chat);rx:26}
-#graph .edge.grp path{stroke:var(--chat);stroke-dasharray:2 4;stroke-linecap:round}
-#graph .edge.grp.rm path{stroke:var(--warn)}
-#graph .edge.grp.hot path{stroke-width:2.6}
-#graph .edge.back{opacity:.45}
-#graph .edge.back .elabel{display:none}
-#graph .edge.back.hot{opacity:1}
-#graph .edge.back.hot .elabel{display:inline}
-#graph .edge.back.dim{opacity:.08}
-#graph .ntag{font-size:12px;fill:var(--trig);font-style:italic}
-#graph .ntag.plain{fill:var(--muted)}
-#graph .node.on rect{stroke-width:2.6}
-#graph .node:focus{outline:none}
-#graph .node:focus-visible rect{stroke-width:3;stroke:var(--ink)}
-#graph .node.dim{opacity:.35}
-#graph .nname,#graph .tname{font-family:var(--head);font-weight:700;font-size:14px;fill:var(--ink)}
-#graph .nmeta,#graph .tmeta{font-size:12px;fill:var(--muted)}
-#graph .nmeta .mv{fill:var(--trig);font-weight:700}
-#graph .nmeta .wn{fill:var(--warn);font-weight:700}
+.fgraph{display:block;width:100%;min-width:calc(var(--w) * .75);height:auto}
+.fgraph .edge path{fill:none;stroke:var(--wire);stroke-width:1.6;transition:opacity .15s,stroke .15s}
+.fgraph .edge.data path{stroke-dasharray:6 5}
+.fgraph .edge.hot path{stroke:var(--flow);stroke-width:2.6}
+.fgraph .edge.dim{opacity:.12}
+.fgraph .elabel{font-size:11.5px;fill:var(--muted);paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round}
+.fgraph .edge.hot .elabel{fill:var(--flow);font-weight:700}
+.fgraph .node{cursor:pointer;transition:opacity .15s}
+.fgraph .node rect{fill:var(--flow-bg);stroke:var(--flow);stroke-width:1.3}
+.fgraph .node.untagged rect{fill:var(--surface);stroke:var(--muted);stroke-dasharray:5 4}
+.fgraph .node.trig rect{fill:var(--trig-bg);stroke:var(--trig)}
+.fgraph .node.nostart rect{fill:var(--slate-bg);stroke:var(--slate);stroke-dasharray:3 3}
+.fgraph .node.grp rect{fill:var(--chat-bg);stroke:var(--chat);rx:26}
+.fgraph .edge.grp path{stroke:var(--chat);stroke-dasharray:2 4;stroke-linecap:round}
+.fgraph .edge.grp.rm path{stroke:var(--warn)}
+.fgraph .edge.grp.hot path{stroke-width:2.6}
+.fgraph .edge.back{opacity:.45}
+.fgraph .edge.back .elabel{display:none}
+.fgraph .edge.back.hot{opacity:1}
+.fgraph .edge.back.hot .elabel{display:inline}
+.fgraph .edge.back.dim{opacity:.08}
+.fgraph .ntag{font-size:12px;fill:var(--trig);font-style:italic}
+.fgraph .ntag.plain{fill:var(--muted)}
+.fgraph .node.on rect{stroke-width:2.6}
+.fgraph .node:focus{outline:none}
+.fgraph .node:focus-visible rect{stroke-width:3;stroke:var(--ink)}
+.fgraph .node.dim{opacity:.35}
+.fgraph .nname,.fgraph .tname{font-family:var(--head);font-weight:700;font-size:14px;fill:var(--ink)}
+.fgraph .nmeta,.fgraph .tmeta{font-size:12px;fill:var(--muted)}
+.fgraph .nmeta .mv{fill:var(--trig);font-weight:700}
+.fgraph .nmeta .wn{fill:var(--warn);font-weight:700}
 .panel{position:fixed;top:0;right:0;bottom:0;width:min(420px,100vw);overflow:auto;z-index:10;background:var(--bg);border-left:1px solid var(--line);
   box-shadow:-8px 0 24px rgba(0,0,0,.18);padding:calc(16px + env(safe-area-inset-top,0px)) 16px 24px}
 .panel[hidden]{display:none}

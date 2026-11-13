@@ -1,0 +1,29 @@
+[
+ {
+  "id": "501",
+  "name": "Weekly tips",
+  "isActive": true,
+  "isRepeating": true,
+  "frequency": "weekly",
+  "days": [
+   3
+  ],
+  "hours": [],
+  "groups": [
+   "Members"
+  ],
+  "waGroups": null,
+  "groupType": "WABA",
+  "startAt": "2026-07-01T09:30:00Z",
+  "endDate": "2028-06-25",
+  "nextTriggerAt": "2026-11-18T09:30:00Z",
+  "schedule": "weekly on Wednesday at 09:30 from 2026-07-01T09:30:00Z until 2028-06-25",
+  "flow": {
+   "uuid": "00000000-0000-4000-8000-000000000003",
+   "name": "Weekly tip",
+   "id": "3",
+   "isActive": true,
+   "tag": null
+  }
+ }
+]
