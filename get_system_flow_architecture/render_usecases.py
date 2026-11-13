@@ -113,7 +113,10 @@ def pills(cx, u, tag):
         alerts |= bool(s["alerts"])
         groups |= {g for d, gs, _ in s["moves"] if d == "into" for g in gs}
     for h in sorted(hosts):
-        out.append((cx.system[h]["name"] if h in cx.system else h, "sys"))
+        if h in cx.system:   # Claude's name for the host, marked as Claude's reading, with the real host kept
+            out.append((f"{cx.system[h]['name']} ({h})", "sys claude"))
+        else:
+            out.append((h, "sys"))
     if functions:
         out.append(("Glific functions", "sys"))
     if sheets:
@@ -126,10 +129,13 @@ def pills(cx, u, tag):
         untagged = sum(1 for fid in members if not cx.m.tagged(fid))
         if untagged:
             out.append((f"{untagged} of {len(members)} without the {tag} tag", "warn"))
-    issues = len(u["watch"]) + sum(1 for fid in members if m.sum[fid]["lost"])
-    if issues:
-        out.append((f"{plural(issues, 'thing')} to check", "warn"))
-    return "".join(f'<span class="pill2 {c}">{t(p)}</span>' for p, c in out)
+    lost = sum(1 for fid in members if m.sum[fid]["lost"])
+    if lost:
+        out.append((f"{plural(lost, 'flow')} with unreachable steps", "warn"))
+    if u["watch"]:
+        out.append((f"{plural(len(u['watch']), 'concern')} from Claude", "warn claude"))
+    return "".join(f'<span class="pill2 {c}"{" title=" + chr(34) + "Claude" + chr(8217) + "s reading" + chr(34) if "claude" in c else ""}>{t(p)}</span>'
+                   for p, c in out)
 
 
 def neighbours(cx, members):
@@ -166,7 +172,7 @@ def flow_pane(cx, fid, findings):
                     link = f' <a href="#uc-{esc(other)}">({t(cx.uc_name[other])})</a>'
             for eid in (f"edge:{s['ref']}:{fid}:start", f"edge:{fid}:{s['ref']}:start"):
                 if eid in cx.edge_meaning:
-                    link += f' <span class="meaning">({t(cx.edge_meaning[eid])})</span>'
+                    link += f' <span class="meaning">(Claude: {t(cx.edge_meaning[eid])})</span>'
             rows.append(f"<li>{t(s['text'])}{link}</li>")
         return f'<h4>{esc(heading)}</h4><ul class="io">{"".join(rows)}</ul>' if rows else ""
 
@@ -190,7 +196,7 @@ def usecase_view(cx, u, findings, tag):
     cards = "".join(f'<div class="fcard" id="card-{esc(u["id"])}-{esc(fid)}">{flow_pane(cx, fid, findings)}</div>' for fid in members)
     return (f'<section class="ucview" id="uc-{esc(u["id"])}" hidden>'
             f'<p><a class="back" href="#">← All use cases</a></p>'
-            f'<h2>{t(u["name"])}</h2><p class="lede2">{t(u["summary"])}</p><div class="pills">{pills(cx, u, tag)}</div>'
+            f'<h2>{t(u["name"])}</h2><p class="lede2"><span class="reading">Claude\u2019s reading</span><br>{t(u["summary"])}</p><div class="pills">{pills(cx, u, tag)}</div>'
             f'<div class="ucgrid"><div class="gscroll">{svg}</div>'
             f'<aside class="pane" aria-live="polite"><button type="button" class="pane-back" hidden>← Back to the story</button>'
             f'<div class="pane-body">{story}</div><template class="story-tpl">{story}</template></aside></div>'
@@ -204,7 +210,8 @@ def render_usecase_page(m, facts, uc, dropped, st):
     order = sorted(uc["use_cases"], key=lambda u: u["kind"] == "tests")
     cards = "".join(
         f'<a class="uccard{" muted-card" if u["kind"] == "tests" else ""}" href="#uc-{esc(u["id"])}">'
-        f'<h3>{t(u["name"])}</h3><p>{t(u["summary"])}</p><div class="pills">{pills(cx, u, st.tag)}</div></a>'
+        f'<h3>{t(u["name"])}</h3><p><span class="reading">Claude\u2019s reading</span><br>{t(u["summary"])}</p>'
+        f'<div class="pills">{pills(cx, u, st.tag)}</div></a>'
         for u in order)
     views = "".join(usecase_view(cx, u, findings, st.tag) for u in order)
 
@@ -254,6 +261,7 @@ UC_CSS = """
 .pill2{font-size:12px;line-height:1;padding:5px 8px;border-radius:99px;border:1px solid var(--line);background:var(--soft);color:var(--ink)}
 .pill2.sys{border-color:var(--slate);background:var(--slate-bg)}
 .pill2.warn{border-color:var(--trig);background:var(--trig-bg);color:var(--trig)}
+.pill2.claude{border-style:dashed}
 .org{max-width:80ch;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:0 0 8px}
 .org p{margin:4px 0}
 .reading{font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--muted)}
@@ -328,6 +336,7 @@ UC_PAGE = """<!DOCTYPE html>
 <section id="home">
 $org
 <h2 style="margin:26px 0 6px">Use cases</h2>
+<p class="muted">Names, summaries and dashed pills are Claude\u2019s reading of the flows. Everything else comes from the export.</p>
 <div class="uccards">$cards</div>
 $shared
 </section>

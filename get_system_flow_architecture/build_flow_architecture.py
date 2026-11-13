@@ -120,24 +120,33 @@ def main():
 
 
 def usecase_step(args, flows, triggers, out_dir):
-    """Facts, Claude, validation and the use-case page. Returns its path, or None when skipped."""
+    """Facts, Claude, validation and the use-case page. Returns its path, or None when skipped.
+
+    Nothing that goes wrong here may cost the user the graph page, so every error ends the
+    step with a one-line reason."""
+    try:
+        return _usecase_step(args, flows, triggers, out_dir)
+    except Exception as e:   # noqa: BLE001 - deliberately broad, see the docstring
+        reason = str(e) if isinstance(e, UsecaseError) else f"{type(e).__name__}: {e}"
+        print(f"\nThe use-case page was skipped: {reason}. The graph page was written as usual.", file=sys.stderr)
+        return None
+
+
+def _usecase_step(args, flows, triggers, out_dir):
     st = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
                   layout="graph", scope_all=True)
     m = Model(flows, triggers, st)
     facts = build_facts(m)
     save_json({"model": MODEL, "system": PROMPT_PATH.read_text(encoding="utf-8"), "facts": facts}, "claude_input.json", out_dir)
-    try:
-        if args.reuse_claude:
-            raw = json.loads((args.reuse_claude / "claude_output.json").read_text(encoding="utf-8"))
-            validated, notes = validate(raw, facts)
-            print(f"Using Claude's saved answer from {args.reuse_claude}", file=sys.stderr)
-        else:
-            print(f"Asking Claude ({MODEL}) to read {len(facts['flows'])} flows; this can take a few minutes...", file=sys.stderr)
-            raw, validated, notes = run_usecases(facts)
-    except (UsecaseError, OSError, ValueError) as e:
-        print(f"\nThe use-case page skipped: {e}. The graph page was written as usual.", file=sys.stderr)
-        return None
-    save_json(raw, "claude_output.json", out_dir)
+    if args.reuse_claude:
+        raw = json.loads((args.reuse_claude / "claude_output.json").read_text(encoding="utf-8"))
+        save_json(raw, "claude_output.json", out_dir)
+        validated, notes = validate(raw, facts)
+        print(f"Using Claude's saved answer from {args.reuse_claude}", file=sys.stderr)
+    else:
+        print(f"Asking Claude ({MODEL}) to read {len(facts['flows'])} flows; this can take a few minutes...", file=sys.stderr)
+        raw, validated, notes = run_usecases(facts)
+        save_json(raw, "claude_output.json", out_dir)
     save_json(dict(validated, dropped=notes), "usecases.json", out_dir)
     if notes:
         print(f"\nValidation dropped {len(notes)} parts of Claude's answer (listed on the page):", file=sys.stderr)
@@ -146,6 +155,7 @@ def usecase_step(args, flows, triggers, out_dir):
     path = out_dir / USECASE_NAME
     path.write_text(render_usecase_page(m, facts, validated, notes, st), encoding="utf-8")
     return path
+
 
 if __name__ == "__main__":
     main()

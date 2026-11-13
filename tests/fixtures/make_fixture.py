@@ -18,12 +18,12 @@ def node(uid, actions=(), exits=None, router=None):
     return n
 
 
-def chain(prefix, steps):
+def chain(prefix, steps, router0=None):
     """Linear nodes: each step is a list of actions; each node exits to the next."""
     nodes = []
     for i, acts in enumerate(steps):
         nxt = f"{prefix}-n{i + 1}" if i + 1 < len(steps) else None
-        nodes.append(node(f"{prefix}-n{i}", acts, [{"uuid": f"{prefix}-e{i}", "destination_uuid": nxt}]))
+        nodes.append(node(f"{prefix}-n{i}", acts, [{"uuid": f"{prefix}-e{i}", "destination_uuid": nxt}], router0 if i == 0 else None))
     return nodes
 
 
@@ -50,11 +50,15 @@ stage_router = {"type": "switch", "operand": "@fields.stage",
                 "cases": [{"uuid": "k1", "type": "has_any_word", "arguments": ["early"], "category_uuid": "c1"},
                           {"uuid": "k2", "type": "has_any_word", "arguments": ["late"], "category_uuid": "c2"}]}
 
+staff_router = {"type": "switch", "operand": "@contact.groups",
+                "categories": [{"uuid": "sc1", "name": "Staff", "exit_uuid": "wel-e0"}],
+                "cases": [{"uuid": "sk1", "type": "has_group", "arguments": ["g9", "Staff"], "category_uuid": "sc1"}]}
+
 flows = [
     flow(U["Welcome"], "Welcome", chain("wel", [
         [msg("Welcome to the Healthy Families service. Reply 1 to join.", "wel-a1")],
         [enter(U["Profile"], "Profile", "wel-a2")],
-    ]), keywords=["hi", "hello"], tag="Demo"),
+    ], router0=staff_router), keywords=["hi", "hello"], tag="Demo"),
     flow(U["Profile"], "Profile", chain("pro", [
         [msg("Which month of pregnancy are you in?", "pro-a1")],
         [{"type": "set_contact_field", "uuid": "pro-a2", "field": {"key": "stage", "name": "stage"}, "value": "@results.month"}],
@@ -91,6 +95,10 @@ flows = [
 ]
 
 triggers = [
+    {"id": "502", "name": "Old cohort tips", "isActive": False, "isRepeating": False, "frequency": "none", "days": [], "hours": [],
+     "groups": ["Old cohort"], "waGroups": None, "groupType": "WABA", "startAt": "2026-01-05T09:30:00Z", "endDate": "2026-01-06",
+     "nextTriggerAt": None, "schedule": "once from 2026-01-05T09:30:00Z until 2026-01-06",
+     "flow": {"uuid": U["Weekly tip"], "name": "Weekly tip", "id": "3", "isActive": True, "tag": None}},
     {"id": "501", "name": "Weekly tips", "isActive": True, "isRepeating": True, "frequency": "weekly", "days": [3], "hours": [],
      "groups": ["Members"], "waGroups": None, "groupType": "WABA", "startAt": "2026-07-01T09:30:00Z", "endDate": "2028-06-25",
      "nextTriggerAt": "2026-11-18T09:30:00Z", "schedule": "weekly on Wednesday at 09:30 from 2026-07-01T09:30:00Z until 2028-06-25",

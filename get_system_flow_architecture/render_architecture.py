@@ -578,7 +578,8 @@ class Model:
         # a keyword box only where the keyword is how the flow starts; otherwise its card lists the keywords
         self.trigger_flows = sorted((u for u in on if self.active_trig.get(u) or (self.flows[u].get("keywords") and u not in called)),
                                     key=by_name)
-        self.no_start = sorted((u for u in on if u not in called and u not in self.trigger_flows), key=by_name)
+        # "No start found" only when nothing in scope starts the flow, not just nothing on this graph
+        self.no_start = sorted((u for u in on if not self.callers[u] and u not in self.trigger_flows), key=by_name)
         self.entry = [u for u in self.trigger_flows if u not in called]
 
     def _lanes(self):

@@ -9,33 +9,70 @@ the model, never from Claude.
 """
 import json
 import re
+import unicodedata
 from collections import Counter
 from urllib.parse import urlsplit
 
 from render_architecture import join, names, schedule_text, times
 
 EXCERPT_CHARS = 200
+MAX_EXCERPTS = 25                                   # per flow: sticky notes first, then messages in order
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-URL = re.compile(r"https?://[^\s\"'<>)]+")
-PHONE = re.compile(r"\+?\d(?:[\s-]?\d){7,}")      # 8 or more digits, allowing spaces and dashes
+URL = re.compile(r"(?:https?://|\bwww\.)[^\s\"'<>)]+", re.I)
+PHONE = re.compile(r"\+?\(?\d(?:[\s.\-()]*\d){7,}")    # 8 or more digits, with spaces, dots, dashes or brackets between
+ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+VIRAMA_ETC = {"\u094d", "\u09cd", "\u0a4d", "\u0acd", "\u0b4d", "\u0bcd", "\u0c4d", "\u0ccd", "\u0d4d", "\u200c", "\u200d"}
+
+
+def _host(url):
+    text = url if "://" in url else "http://" + url
+    try:
+        return urlsplit(text).hostname or "[link]"
+    except ValueError:
+        return "[link]"
+
+
+def _name_pattern(name):
+    return re.compile(r"(?<!\w)" + re.escape(name) + r"(?!\w)", re.I)
+
+
+def _cut(text, limit):
+    """Cut at `limit` characters without splitting a letter from its vowel sign or virama."""
+    if len(text) <= limit:
+        return text
+    cut = limit
+    while cut > 0 and (unicodedata.category(text[cut]).startswith("M") or text[cut - 1] in VIRAMA_ETC or text[cut] in VIRAMA_ETC):
+        cut -= 1
+    return text[:cut].rstrip() + "\u2026"
 
 
 def clean_text(text, staff_names, limit=EXCERPT_CHARS):
     """Strip personal data and long links from one piece of text, then cut it to `limit` characters."""
     out = str(text or "")
-    for name in sorted((n for n in staff_names if n and len(n) > 2), key=len, reverse=True):
-        out = re.sub(re.escape(name), "a staff contact", out, flags=re.I)
+    out = URL.sub(lambda mm: _host(mm.group(0)), out)          # before emails, so user:pw@host links go whole
     out = EMAIL.sub("[email]", out)
-    out = URL.sub(lambda mm: urlsplit(mm.group(0)).hostname or "[link]", out)
+    names = set()
+    for n in staff_names:
+        if n and len(n) > 2:
+            names.add(n)
+            names.update(p for p in re.split(r"[\s.]+", n) if len(p) > 2)
+    for name in sorted(names, key=len, reverse=True):
+        out = _name_pattern(name).sub("a staff contact", out)
+    dates = ISO_DATE.findall(out)
+    out = ISO_DATE.sub("\x00", out)
     out = PHONE.sub("[number]", out)
+    for d in dates:
+        out = out.replace("\x00", d, 1)
     out = re.sub(r"\s+", " ", out).strip()
-    if len(out) > limit:
-        out = out[:limit].rstrip() + "…"
-    return out
+    return _cut(out, limit)
 
 
 def staff_names(flows):
-    """Names of staff contacts in staff alerts and ticket assignees, anywhere in the export."""
+    """Names of staff contacts in staff alerts and ticket assignees, anywhere in the export.
+
+    A contact named like a flow (an org or team account such as a helpline) is not a person,
+    and masking it would garble the messages that mention the org. When only part of a name
+    appears as a word in flow names, the other parts are returned on their own instead."""
     found = set()
     for f in flows.values():
         for n in f.get("nodes") or []:
@@ -44,10 +81,18 @@ def staff_names(flows):
                     found.update(c.get("name") for c in a.get("contacts") or [] if isinstance(c, dict))
                 elif a.get("type") == "open_ticket" and isinstance(a.get("assignee"), dict):
                     found.add(a["assignee"].get("name"))
-    # A "staff contact" named like a flow (an org or team account such as a helpline) is not a
-    # person's name, and removing it would garble the messages that mention the org.
-    flow_names = " ".join(str(f.get("name") or "") for f in flows.values()).lower()
-    return {n for n in found if n and n.lower() not in flow_names}
+    flow_names = " ".join(str(f.get("name") or "") for f in flows.values())
+    in_flow_names = lambda w: bool(_name_pattern(w).search(flow_names))
+    out = set()
+    for name in (n for n in found if n):
+        if in_flow_names(name):
+            continue
+        parts = [p for p in re.split(r"[\s.]+", name) if len(p) > 2]
+        if any(in_flow_names(p) for p in parts):
+            out.update(p for p in parts if not in_flow_names(p))
+        else:
+            out.add(name)
+    return out
 
 
 def _excerpts(flow, uid, staff):
@@ -72,10 +117,13 @@ def _excerpts(flow, uid, staff):
                 add("template", "tpl", f"staff alert template {tpl}" if tpl else f"staff alert: {a.get('text') or ''}")
             elif kind == "send_interactive_msg":
                 add("interactive", "int", _interactive_text(a))
+    stickies = []
     for st in ((flow.get("ui") or {}).get("stickies") or {}).values():
         if isinstance(st, dict):
-            add("sticky", "sticky", " ".join(str(st.get(k) or "") for k in ("title", "body")))
-    return out
+            text = clean_text(" ".join(str(st.get(k) or "") for k in ("title", "body")), staff)
+            if text:
+                stickies.append({"id": f"sticky:{uid}:{len(stickies) + 1}", "kind": "sticky", "text": text})
+    return (stickies + out)[:MAX_EXCERPTS]   # designers' notes say most about intent, so they go first
 
 
 def _interactive_text(a):
@@ -125,7 +173,7 @@ def build_facts(m):
     flows, edges, groups, triggers, hosts = [], [], {}, [], set()
 
     def group(name):
-        return groups.setdefault(name, {"id": f"group:{name}", "name": name, "added_by": [], "removed_by": [], "triggers": []})
+        return groups.setdefault(name, {"id": f"group:{name}", "name": name, "added_by": [], "removed_by": [], "triggers": [], "checked_by": []})
 
     for t in m.triggers:
         fl = (t.get("flow") or {}).get("uuid")
@@ -135,6 +183,8 @@ def build_facts(m):
         gs = names(t.get("groups")) + names(t.get("waGroups"))
         tid = f"trigger:{t.get('id')}"
         triggers.append({"id": tid, "flow": fl, "schedule": schedule_text(t, m.tz, []), "groups": gs, "active": active})
+        for g in gs:
+            group(g)
         if active:
             edges.append({"id": f"edge:{tid}:{fl}:start", "from": tid, "to": fl, "kind": "start"})
             for g in gs:
@@ -177,6 +227,11 @@ def build_facts(m):
                     edges.append({"id": eid, "from": u, "to": f"group:{g}", "kind": kind})
 
         for n in f.get("nodes") or []:
+            for case in (n.get("router") or {}).get("cases") or []:
+                if case.get("type") == "has_group" and case.get("arguments"):
+                    rec = group(str(case["arguments"][-1]))
+                    if u not in rec["checked_by"]:
+                        rec["checked_by"].append(u)
             for a in n.get("actions") or []:
                 if a.get("type") == "call_webhook" and "://" in str(a.get("url") or ""):
                     hosts.add(urlsplit(str(a["url"]).strip()).hostname or "")

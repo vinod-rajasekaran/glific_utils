@@ -10,15 +10,20 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD="$ROOT/get_system_flow_architecture/build_flow_architecture.py"
+# Use the repo's virtual environment when there is one (it holds the anthropic package for --usecases)
+PY="python3"
+if [[ -x "$ROOT/.venv/bin/python3" ]]; then
+  PY="$ROOT/.venv/bin/python3"
+fi
 
 for arg in "$@"; do
   if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
-    exec python3 "$BUILD" --help
+    exec "$PY" "$BUILD" --help
   fi
 done
 
 # The build prints each page it wrote on its own stdout line; progress goes to stderr.
-pages="$(python3 "$BUILD" "$@")"
+pages="$("$PY" "$BUILD" "$@")"
 
 while IFS= read -r page; do
   if [[ -f "$page" ]] && command -v open >/dev/null; then

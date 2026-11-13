@@ -14,7 +14,7 @@ from pathlib import Path
 
 MODEL = "claude-opus-5-5"
 EFFORT = "high"
-MAX_TOKENS = 64000
+MAX_TOKENS = 128000
 PROMPT_PATH = Path(__file__).resolve().parent / "USECASE_PROMPT.md"
 CONFIDENCE = ["clear", "likely", "guess"]
 ROLES = ["core", "helper", "shared", "test", "leftover", "unknown"]
@@ -90,7 +90,8 @@ def call_claude(facts, client=None, repair_errors=None, previous=None):
         raise UsecaseError(f"Claude declined the request{f' ({detail})' if detail else ''}")
     if msg.stop_reason == "max_tokens":
         raise UsecaseError("Claude's answer was cut off at the output limit")
-    text = next((b.text for b in msg.content if getattr(b, "type", "") == "text"), "")
+    # Join every text block: after a mid-stream refusal fallback the answer continues in a new block
+    text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
     try:
         return json.loads(text)
     except ValueError as e:
@@ -178,8 +179,13 @@ def validate(out, facts):
         if f is None:
             problems.append(f"flows: no purpose given for {names[fid]}")
             f = {"purpose": "", "role": "unknown", "evidence": [], "confidence": "guess"}
+        bad = [x for x in f.get("evidence", []) if x not in evidence_ids]
+        if bad:
+            problems.append(f"flows: unknown evidence IDs {', '.join(map(str, bad[:5]))} for {names[fid]}")
         ev = [x for x in f.get("evidence", []) if x in evidence_ids]
         conf = f.get("confidence") if f.get("confidence") in CONFIDENCE else "guess"
+        if not ev and f.get("purpose") and conf != "guess":
+            problems.append(f"flows: the purpose of {names[fid]} cites no evidence in the facts, so it is shown as a guess")
         flows.append({"id": fid, "purpose": str(f.get("purpose") or ""), "role": f.get("role") if f.get("role") in ROLES else "unknown",
                       "use_case": uc_of.get(fid, ""), "evidence": ev, "confidence": conf if ev else "guess"})
     not_placed = [fid for fid in flow_ids if fid not in uc_of]
@@ -192,14 +198,19 @@ def validate(out, facts):
             problems.append(f"edges: unknown edge ID {e.get('id')}")
     systems = []
     for s in out.get("systems", []) if isinstance(out.get("systems"), list) else []:
-        if isinstance(s, dict) and s.get("host") in facts["hosts"]:
+        if isinstance(s, dict) and s.get("host") in facts["hosts"] and str(s.get("name") or "").strip():
             systems.append({"host": s["host"], "name": str(s.get("name") or ""),
                             "confidence": s.get("confidence") if s.get("confidence") in CONFIDENCE else "guess"})
         elif isinstance(s, dict):
             problems.append(f"systems: host {s.get('host')} is not a webhook host in the facts")
 
     summary = out.get("org_summary") if isinstance(out.get("org_summary"), dict) else {}
+    bad = [x for x in summary.get("evidence", []) if x not in evidence_ids]
+    if bad:
+        problems.append(f"org summary: unknown evidence IDs {', '.join(map(str, bad[:5]))}")
     ev = [x for x in summary.get("evidence", []) if x in evidence_ids]
+    if not ev and summary.get("text") and summary.get("confidence") != "guess":
+        problems.append("org summary: cites no evidence in the facts, so it is shown as a guess")
     org_summary = {"text": str(summary.get("text") or ""), "evidence": ev,
                    "confidence": (summary.get("confidence") if summary.get("confidence") in CONFIDENCE else "guess") if ev else "guess"}
 
@@ -208,7 +219,10 @@ def validate(out, facts):
 
 
 def run_usecases(facts, client=None):
-    """Call Claude, validate, and repair once if needed. Returns (raw answer, validated, notes on what was dropped)."""
+    """Call Claude, validate, and repair once if needed. Returns (raw answer, validated, notes on what was dropped).
+
+    If the repair call fails or its answer is unusable, the first answer is kept (with its problems
+    listed), so a paid-for usable answer is never thrown away."""
     client = client or _client()
     raw = call_claude(facts, client)
     try:
@@ -217,6 +231,11 @@ def run_usecases(facts, client=None):
         problems, validated = [str(e)], None
     if not problems:
         return raw, validated, []
-    raw = call_claude(facts, client, repair_errors=problems, previous=raw)
-    validated, problems = validate(raw, facts)
-    return raw, validated, problems
+    try:
+        raw2 = call_claude(facts, client, repair_errors=problems, previous=raw)
+        validated2, problems2 = validate(raw2, facts)
+    except UsecaseError as e:
+        if validated is None:
+            raise
+        return raw, validated, problems + [f"The repair call failed ({e}), so Claude's first answer is shown."]
+    return raw2, validated2, problems2

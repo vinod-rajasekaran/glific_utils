@@ -35,7 +35,29 @@
       "uuid": "wel-e0",
       "destination_uuid": "wel-n1"
      }
-    ]
+    ],
+    "router": {
+     "type": "switch",
+     "operand": "@contact.groups",
+     "categories": [
+      {
+       "uuid": "sc1",
+       "name": "Staff",
+       "exit_uuid": "wel-e0"
+      }
+     ],
+     "cases": [
+      {
+       "uuid": "sk1",
+       "type": "has_group",
+       "arguments": [
+        "g9",
+        "Staff"
+       ],
+       "category_uuid": "sc1"
+      }
+     ]
+    }
    },
    {
     "uuid": "wel-n1",

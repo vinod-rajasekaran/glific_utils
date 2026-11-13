@@ -82,7 +82,7 @@ With `--usecases`, the run also asks Claude to read every active flow and work o
 
 **What is sent to the API.** `usecase_facts.py` builds the facts: for each flow its name, tag, keywords, how it starts, what it leads to, what it touches (webhook hosts, sheets, fields, groups, labels, tickets, staff alerts by template) and excerpts of its messages, interactive messages, template names and designers' sticky notes. Excerpts are cut to 200 characters. Staff contact names become "a staff contact", phone numbers and emails are masked, and links are cut to their host. Webhook credentials were already blanked by the exporter. The exact request is saved as `claude_input.json` in the run folder before it is sent.
 
-**Requirements and cost.** `pip install anthropic`, and an Anthropic API key in `ANTHROPIC_API_KEY` (or in `.env`). The step uses `claude-opus-5-5` in one call (two if a repair is needed); for an org with about 45 flows the input is roughly 30,000 tokens. Without the package or a key, or if Claude's answer is unusable, the run prints why and still writes the graph page.
+**Requirements and cost.** The `anthropic` package (in `.venv`, see the [main README](../README.md)), and an Anthropic API key in `ANTHROPIC_API_KEY` (or in `.env`). The step uses `claude-opus-5-5` in one call (two if a repair is needed); for an org with about 45 flows the input is roughly 30,000 tokens and the call takes about five minutes. Each flow sends at most 25 excerpts, sticky notes first. Without the package or a key, or if Claude's answer is unusable, the run prints why and still writes the graph page.
 
 ```bash
 ./flow_map.sh --from-json output/get_system_flow_architecture/2026-11-13_20-49-46 --usecases

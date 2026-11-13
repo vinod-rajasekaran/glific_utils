@@ -36,7 +36,10 @@ class FakeClient:
 
     def _stream(self, **kw):
         self.calls.append(kw)
-        text = json.dumps(self.outputs.pop(0))
+        nxt = self.outputs.pop(0)
+        if isinstance(nxt, Exception):
+            raise nxt
+        text = json.dumps(nxt)
         msg = SimpleNamespace(stop_reason=self.stop_reason, stop_details=None,
                               content=[SimpleNamespace(type="thinking", thinking=""), SimpleNamespace(type="text", text=text)])
 

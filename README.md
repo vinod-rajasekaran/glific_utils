@@ -2,7 +2,11 @@
 
 Small Python utilities for pulling data out of a [Glific](https://glific.org) instance through its GraphQL API. Use them to audit, back up or analyse your chatbot setup.
 
-The scripts need only Python 3.9+ and its standard library. The optional use-case page (`--usecases`) also needs `pip install anthropic` and an Anthropic API key.
+The scripts need only Python 3.9+ and its standard library. The optional use-case page (`--usecases`) also needs the `anthropic` package and an Anthropic API key (`ANTHROPIC_API_KEY` in `.env`). Install the package into a virtual environment at the repo root, which `flow_map.sh` uses automatically when it exists:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install anthropic
+```
 
 ## Quick start
 

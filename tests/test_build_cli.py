@@ -38,7 +38,7 @@ class BuildCliTest(unittest.TestCase):
         (Path(block) / "anthropic.py").write_text("raise ImportError('blocked for the test')\n")
         p, out = run("--usecases", PYTHONPATH=block)
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn("use-case page skipped", p.stderr)
+        self.assertIn("use-case page was skipped", p.stderr)
         self.assertIn("anthropic", p.stderr)
         pages = p.stdout.split()
         self.assertEqual(len(pages), 1)
