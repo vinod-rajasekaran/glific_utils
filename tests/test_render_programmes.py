@@ -77,11 +77,15 @@ class RenderTest(unittest.TestCase):
         for u in self.uc["use_cases"]:
             self.assertIn(f'id="{u["id"]}-graph"', self.page)
 
-    def test_neighbour_faded(self):
-        # Ask AI copy (tests use case) reads a field Profile sets, so it is a faded neighbour on weekly-tips
+    def test_tests_neighbour_left_out(self):
+        # Ask AI copy (tests) reads a field Profile sets: not drawn, but warned about from the export
         view = self.page[self.page.index('id="uc-weekly-tips"'):]
         view = view[:view.index("</section>")]
-        self.assertRegex(view, rf'class="node flow[^"]*faded[^"]*" data-id="weekly-tips-f-{U(5)}"')
+        self.assertNotIn(f'data-id="weekly-tips-f-{U(5)}"', view)
+        self.assertNotIn(f'data-id="weekly-tips-k-{U(5)}"', view)
+        self.assertIn("From the export", view)
+        self.assertIn("Ask AI copy", view)
+        self.assertIn("stage", view)
 
     def test_evidence_shown_with_statement(self):
         self.assertIn("Welcome to the Healthy Families service", self.page)

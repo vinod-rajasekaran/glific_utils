@@ -68,5 +68,14 @@ class GraphSubsetTest(unittest.TestCase):
         self.assertEqual(len(outs), 1)
 
 
+    def test_no_start_boxes_for_neighbours(self):
+        m = model(scope_all=True)
+        copy = uid(m, "Ask AI copy")                     # has the keyword "test"
+        m.graph_view({uid(m, "Welcome"), uid(m, "Profile"), copy}, no_starts={copy})
+        self.assertNotIn(copy, m.trigger_flows)
+        self.assertNotIn(copy, m.no_start)
+        self.assertNotIn(f"k-{copy}", {n for e in m.edges() for n in e[:2]})
+
+
 if __name__ == "__main__":
     unittest.main()

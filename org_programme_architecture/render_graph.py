@@ -512,10 +512,11 @@ class Model:
         self.graph_view(on, add_fillers=True)
         self.strip = [u for u in self.strip if u not in self.on_map]
 
-    def graph_view(self, flow_ids, add_fillers=False):
+    def graph_view(self, flow_ids, add_fillers=False, no_starts=frozenset()):
         """Put exactly these flows on the graph and work out their trigger, keyword, no-start and
         group boxes. With add_fillers, flows outside the set that add contacts to a group a
-        schedule on the graph sends to are added too."""
+        schedule on the graph sends to are added too. Flows in no_starts (faded neighbours) get
+        no start boxes and do not pull their schedules' groups onto the graph."""
         on = set(flow_ids)
         by_name = lambda u: self.name(u).lower()
         self.on_map = on
@@ -523,7 +524,7 @@ class Model:
         # flow adds contacts to it or removes them. Flows outside the scope that add contacts to it
         # join the graph, since they decide who the schedule reaches.
         targets = defaultdict(list)
-        for u in sorted(on, key=by_name):
+        for u in sorted(on - set(no_starts), key=by_name):
             for t in self.active_trig.get(u, []):
                 for gname in names(t.get("groups")):
                     targets[gname].append(u)
@@ -548,12 +549,13 @@ class Model:
 
         called = {u for u in on if any(c in on for c in self.callers[u])}
         # a keyword box only where the keyword is how the flow starts; otherwise its card lists the keywords
-        self.trigger_flows = sorted((u for u in on if self.active_trig.get(u) or (self.flows[u].get("keywords") and u not in called)),
+        own = on - set(no_starts)
+        self.trigger_flows = sorted((u for u in own if self.active_trig.get(u) or (self.flows[u].get("keywords") and u not in called)),
                                     key=by_name)
         # Flows that Glific's organisation settings start get a "Glific setting" box
-        self.setting_flows = sorted((u for u in on if u in self.setting_starts), key=by_name)
+        self.setting_flows = sorted((u for u in own if u in self.setting_starts), key=by_name)
         # "No start found" only when nothing in scope starts the flow, not just nothing on this graph
-        self.no_start = sorted((u for u in on if not self.callers[u] and u not in self.trigger_flows
+        self.no_start = sorted((u for u in own if not self.callers[u] and u not in self.trigger_flows
                                 and u not in self.setting_starts), key=by_name)
         self.entry = [u for u in self.trigger_flows if u not in called]
 

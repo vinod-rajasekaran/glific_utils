@@ -42,6 +42,7 @@ class _Ctx:
         self.prog_of_uc = {pid: p["id"] for p in self.programmes for pid in p["parts"]}
         self.prog_of = {fid: self.prog_of_uc[u] for fid, u in self.uc_of.items() if u in self.prog_of_uc}
         self.prog_name = {p["id"]: p["name"] for p in self.programmes}
+        self.prog_kind = {p["id"]: p["kind"] for p in self.programmes}
         self.excerpt = {e["id"]: (f["id"], e) for f in facts["flows"] for e in f["excerpts"]}
         self.group = {g["id"]: g for g in facts["groups"]}
         self.trigger = {x["id"]: x for x in facts["triggers"]}
@@ -206,6 +207,23 @@ def part_chip(n, name):
     return f'<span class="partchip"><i class="pdot p{n}"></i>{t(name)}</span>'
 
 
+def test_readers_note(cx, members, tests):
+    """One line, from the export alone, naming test flows that connect to this programme."""
+    if not tests:
+        return ""
+    fields, other = set(), False
+    for w, r, fld in cx.m.data_links:
+        if w in members and r in tests:
+            fields.add(fld)
+    other = any(e["kind"] != "data" and ({e["from"], e["to"]} & tests) and ({e["from"], e["to"]} & members) for e in cx.facts["edges"])
+    names = join(sorted((cx.flow[f]["name"] for f in tests), key=str.lower), 4)
+    what = f"read fields this programme sets: {join(sorted(fields), 5)}" if fields else "connect to flows in this programme"
+    if fields and other:
+        what += ", and start or are started by its flows"
+    return (f'<p class="factnote"><span class="reading">From the export</span><br>'
+            f'{plural(len(tests), "test flow")} ({t(names)}) {esc(what)}. They are left off this graph.</p>')
+
+
 def programme_view(cx, prog, findings, tag):
     """One programme: a graph of all its parts' flows (each box striped by its part) beside a pane
     with the programme's story and a section per part."""
@@ -215,8 +233,13 @@ def programme_view(cx, prog, findings, tag):
     members = [fid for u in parts for fid in u["flows"]]
     part_of = {fid: part_no[cx.uc_of[fid]] for fid in members} if len(parts) > 1 else {}
     near = neighbours(cx, set(members))
-    m.graph_view(set(members) | near)
+    # Test copies and leftovers are not drawn as neighbours: a warning from the export says which
+    # of them read or touch this programme's data instead
+    tests = {f for f in near if cx.prog_kind.get(cx.prog_of.get(f)) == "tests"}
+    near -= tests
+    m.graph_view(set(members) | near, no_starts=near)
     svg, tpls = graph_svg(m, m.edges(), findings, ns=f"{pid}-", faded=near, part_of=part_of)
+    test_note = test_readers_note(cx, set(members), tests)
     panes = "".join(f'<template id="pane-{esc(pid)}-f-{esc(fid)}">{flow_pane(cx, fid, findings)}</template>'
                     for fid in sorted(m.on_map, key=lambda x: cx.flow[x]["name"].lower()) if fid in cx.flow)
     sections = ""
@@ -233,7 +256,9 @@ def programme_view(cx, prog, findings, tag):
                     + statements(cx, "What to watch", u["watch"], " w"))
     story = (f'<div class="pane-story"><p class="muted">{claude_label(prog["confidence"])}</p>'
              + statements(cx, "The programme end to end", prog["story"])
-             + statements(cx, "What to watch across it", prog["watch"], " w")
+             + (f'<h3 class="ph w">What to watch across it</h3>{test_note}' if test_note and not prog["watch"] else "")
+             + (statements(cx, "What to watch across it", prog["watch"], " w").replace('<ul class="sts">', f'{test_note}<ul class="sts">', 1)
+                if prog["watch"] else "")
              + (f'<h3 class="ph">Its parts</h3>' if len(parts) > 1 else "") + sections
              + '<p class="hint">Select a box in the graph to see that flow in detail. Faded boxes belong to other programmes.</p></div>')
     legend = f'<div class="partlegend">{"".join(part_chip(part_no[u["id"]], u["name"]) for u in parts)}</div>' if len(parts) > 1 else ""
@@ -400,6 +425,7 @@ p.ev{padding-left:10px}
 .psum{font-size:13.5px;color:var(--muted);margin:6px 0 0}
 .cardgroup{margin:18px 0 10px}
 .graphcard{border-style:dashed}
+.factnote{font-size:14px;margin:6px 0 8px;padding:8px 10px;border-left:3px solid var(--trig);background:var(--soft);border-radius:0 6px 6px 0}
 .ucview .legend{margin:8px 0 4px}
 .fgraph .node.faded{opacity:.4}
 .fgraph .node.faded rect{stroke-dasharray:4 3}
