@@ -778,7 +778,21 @@ def keyword_card(m, u):
 
 # --------------------------------------------------------------------------- sections
 
+def _used_by(m, us, limit=5):
+    names_ = sorted(map(m.name, us), key=str.lower)
+    return join(names_, limit)
+
+
+def _table(caption, rows, heads):
+    body = "".join("<tr>" + "".join(f"<td>{esc(typo(c))}</td>" for c in r) + "</tr>" for r in rows)
+    head = "".join(f"<th>{esc(h)}</th>" for h in heads)
+    return (f'<details class="tbl"><summary>{esc(caption)} ({len(rows)})</summary>'
+            f'<div class="tblwrap"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div></details>')
+
+
 def shared_resources(m):
+    """Webhook hosts, groups and sheets used by two or more flows, extra keywords and widely written
+    fields, as one collapsed table."""
     hosts, groups, sheets = defaultdict(set), defaultdict(set), defaultdict(set)
     for u in m.scope:
         s = m.sum[u]
@@ -789,48 +803,42 @@ def shared_resources(m):
                 groups[g].add(u)
         for sh in s["sheets"]:
             sheets[sh].add(u)
-    parts = []
-    for label, d in (("webhook host", hosts), ("group", groups), ("sheet", sheets)):
+    rows = []
+    for label, d in (("Webhook", hosts), ("Group", groups), ("Sheet", sheets)):
         for k, us in sorted(d.items(), key=lambda x: (-len(x[1]), x[0])):
             if len(us) >= 2:
-                parts.append(f"The {label} {k} is used by {join(sorted(map(m.name, us)), 5)}.")
-    kw = [f"{k} ({m.name(u)})" for u in sorted(m.scope, key=m.name)
-          if u not in m.entry or m.active_trig.get(u) for k in (m.flows[u].get("keywords") or [])]
-    if kw:
-        parts.append(f"Keywords that also start flows directly: {join(kw, 12)}.")
-    if m.shared_fields:
-        fs = [f"{f} ({plural(len(w), 'writer')})" for f, w in sorted(m.shared_fields.items())]
-        parts.append(f"These contact fields are written by more than two flows and read by others, so no line is drawn for them: {join(fs, 8)}.")
-    if not parts:
+                rows.append((label, k, _used_by(m, us)))
+    for u in sorted(m.scope, key=m.name):
+        kw = m.flows[u].get("keywords") or []
+        if kw and (u not in m.entry or m.active_trig.get(u)):
+            rows.append(("Keywords", join(kw, 6, "or"), m.name(u)))
+    for f, w in sorted(m.shared_fields.items()):
+        rows.append(("Field", f, f"written by {plural(len(w), 'flow')}: {_used_by(m, w, 3)}"))
+    if not rows:
         return ""
-    return f'<p class="note">{esc(typo(" ".join(parts)))}</p>'
+    return _table("Shared across flows", rows, ("Kind", "Name", "Used by"))
 
 
 def strip_section(m):
-    cards = [flow_card(m, u) for u in m.strip]
-    # untagged flows outside scope that change groups the scope uses
+    """Flows in scope that are not on the graph, untagged flows that change groups the graph uses,
+    and flows named in triggers or starts but missing from the export: one row each."""
+    def what(u):
+        chips = [c for c, _ in node_chips(m, u)]
+        return join(chips, 6) or "nothing that leaves the bot"
+
+    rows = [(m.name(u), m.tag_label(u) or "No tag", what(u), "No link to the graph") for u in m.strip]
     scope_groups = {g for u in m.scope for _, gs, _ in m.sum[u]["moves"] for g in gs}
     scope_groups |= {g for u in m.scope for t in m.active_trig.get(u, []) + m.earlier_trig.get(u, []) for g in names(t.get("groups"))}
     matter = [u for u in m.flows if u not in m.scope and not m.tagged(u)
               and any(set(gs) & scope_groups for _, gs, _ in m.sum[u]["moves"])]
-    cards += [flow_card(m, u) for u in sorted(matter, key=m.name)[:8]]
-    rows_ = []
-    if m.missing_trig:
-        items = []
-        for n, ts in sorted(m.missing_trig.items()):
-            last = max((d for d in (parse_utc(t.get("startAt")) for t in ts) if d), default=None)
-            items.append(f"{n} ({plural(len(ts), 'trigger')}{' up to ' + fmt_day(last) if last else ''})")
-        rows_.append(row("Triggers", join(items, 6)))
-    if m.missing_targets:
-        rows_.append(row("Starts", join([f"{n} (entered by {join(sorted(map(m.name, us)), 3)})" for n, us in sorted(m.missing_targets.items())], 5)))
-    if rows_:
-        cards.append('<article class="card untagged" data-static><div class="ch"><h3>Named but not exported</h3>'
-                     '<span class="tag no">Missing</span></div>' + "".join(rows_) + "</article>")
-    if not cards:
+    rows += [(m.name(u), m.tag_label(u) or "No tag", what(u), "Changes groups the graph uses") for u in sorted(matter, key=m.name)]
+    for n, ts in sorted(m.missing_trig.items()):
+        rows.append((n, "", f"{plural(len(ts), 'trigger')}", "Named in triggers, not in the export"))
+    for n, us in sorted(m.missing_targets.items()):
+        rows.append((n, "", f"entered by {join(sorted(map(m.name, us)), 3)}", "Named in a start, not in the export"))
+    if not rows:
         return ""
-    intro = ("These flows have no start link to the map, were moved off the map to keep it readable, "
-             "or sit outside the tag but change groups the map uses.")
-    return f'<section class="sect"><h2>Other flows in the account</h2><p>{esc(typo(intro))}</p><div class="strip">{"".join(cards)}</div></section>'
+    return f'<section class="sect">{_table("Other flows in the account", rows, ("Flow", "Tag", "What it does", "Why it is listed"))}</section>'
 
 
 def name_prefix(names_):
@@ -1070,13 +1078,15 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
     soft = {(a, b) for a, b, k in edges if k in ("ga", "gr")}
     flows_only = {n: sz for n, sz in sizes.items() if n.startswith("f-")}
     first = graph_layout(flows_only, [(a, b) for a, b, _ in edges if a in flows_only and b in flows_only])
+    # Columns: groups (if any), then one "when it starts" column holding every trigger, keyword,
+    # setting and no-start box, then the flows. One column for all starts, so the schedules line up.
     shift = 2 if groups else 1
     fixed = {n: L + shift for n, L in first.layer.items()}
     for a, b, _ in edges:
         if a[0] in "tkxs":
-            fixed[a] = fixed[b] - 1
-    for i, (_, info) in enumerate(groups):
-        fixed[f"g-{i}"] = min(fixed[f"t-{u}"] for u in info["triggers"]) - 1
+            fixed[a] = shift - 1
+    for i in range(len(groups)):
+        fixed[f"g-{i}"] = shift - 2
     g = graph_layout(sizes, [(a, b) for a, b, _ in edges], fixed, soft=soft)
 
     fields = defaultdict(list)
@@ -1361,6 +1371,12 @@ details p{margin:6px 0 0}
 .sect h2{margin-bottom:6px}
 .sect>p{margin:0 0 16px;color:var(--muted);max-width:80ch}
 .strip{display:grid;grid-template-columns:1fr;gap:18px;align-items:start}
+.tbl{margin:22px 0 0;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.tbl summary{cursor:pointer;padding:10px 14px;font-family:var(--head);font-weight:700;font-size:16px}
+.tblwrap{overflow-x:auto;padding:0 14px 12px}
+.tbl table{border-collapse:collapse;width:100%;font-size:13.5px}
+.tbl th{text-align:left;font-weight:700;color:var(--muted);padding:6px 10px 6px 0;border-bottom:1px solid var(--line)}
+.tbl td{padding:6px 10px 6px 0;border-bottom:1px solid var(--soft);vertical-align:top;overflow-wrap:anywhere}
 .gaps p{margin:0 0 10px;max-width:85ch;color:var(--ink)}
 .jrow{margin:0 0 22px}
 .jrow h3{margin-bottom:10px}

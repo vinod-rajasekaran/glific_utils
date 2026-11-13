@@ -97,7 +97,9 @@ def statements(cx, heading, items, cls=""):
     return f'<h3 class="ph{cls}">{esc(heading)}</h3><ul class="sts">{"".join(statement(cx, s) for s in items)}</ul>'
 
 
-def pills(cx, u, tag):
+def pills(cx, u, tag, brief=False):
+    """Pills computed from the facts. brief keeps the first screen short: flows, how they start,
+    outside systems and Claude's concerns."""
     m, members = cx.m, set(u["flows"])
     out = [(plural(len(members), "flow"), "")]
     kinds = Counter()
@@ -129,6 +131,13 @@ def pills(cx, u, tag):
         out.append(("Glific functions", "sys"))
     if sheets:
         out.append(("Google Sheets", "sys"))
+    if brief:
+        systems = [p for p in out if "sys" in p[1]]
+        starts = [p for p in out[1:] if p[1] in ("", "warn") and p not in systems]
+        sys_pill = [(f"{plural(len(systems), 'outside system')}", "sys")] if len(systems) > 1 else systems
+        concerns = [(f"{plural(len(u['watch']), 'concern')} from Claude", "warn claude")] if u["watch"] else []
+        out = out[:1] + starts[:2] + sys_pill + concerns
+        return "".join(f'<span class="pill2 {c}">{t(p)}</span>' for p, c in out)
     if alerts:
         out.append(("Staff alerts", "warn"))
     if groups:
@@ -258,7 +267,7 @@ def render_programme_page(m, facts, uc, dropped, st):
                  if len(parts) > 1 else "")
         cards += (f'<a class="uccard{" muted-card" if p["kind"] == "tests" else ""}" href="#uc-{esc(p["id"])}">'
                   f'<h3>{t(p["name"])}</h3><p><span class="reading">Claude\u2019s reading</span><br>{t(p["summary"])}</p>'
-                  f'{chips}<div class="pills">{pills(cx, whole, st.tag)}</div></a>')
+                  f'{chips}<div class="pills">{pills(cx, whole, st.tag, brief=True)}</div></a>')
     shared = shared_resources(m)     # before the views, which change the model's graph
     views = "".join(programme_view(cx, p, findings, st.tag) for p in order)
 
