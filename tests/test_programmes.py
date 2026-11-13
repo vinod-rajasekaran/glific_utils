@@ -69,7 +69,10 @@ class RenderTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         m, facts, v, p, st = setup("claude_output_programmes.json")
-        cls.page = ru.render_programme_page(m, facts, v, p, st)
+        flows = json.loads((FIX / "flows.json").read_text())
+        triggers = json.loads((FIX / "triggers.json").read_text())
+        gm = ra.Model(flows, triggers, ra.Settings(project="Demo", tag="Demo", today=date(2026, 11, 13)))
+        cls.page = ru.render_programme_page(m, facts, v, p, st, graph_model=gm)
         i = cls.page.index('id="home"')
         cls.home = cls.page[i:cls.page.index("</section>", i)]
 
@@ -90,6 +93,11 @@ class RenderTest(unittest.TestCase):
         view = view[:view.index("</section>")]
         self.assertIn('class="pstripe p1"', view)
         self.assertIn('class="pstripe p2"', view)
+
+    def test_full_graph_is_a_view(self):
+        self.assertIn('href="#uc-graph"', self.home)
+        view = self.page[self.page.index('id="uc-graph"'):]
+        self.assertIn('id="all-graph"', view[:view.index("</section>")])
 
     def test_pane_has_part_sections(self):
         view = self.page[self.page.index('id="uc-healthy-families"'):]

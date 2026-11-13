@@ -15,7 +15,7 @@ cp .env.example .env                                  # fill in URL, phone, pass
 ./org_map.sh --project "My Bot" --tag "2025 Pilot"   # fetch flows and triggers, build the HTML, open it
 ```
 
-`org_map.sh` runs the whole pipeline in one step and opens the pages it wrote. Add `--programmes` to have Claude explain the bot as programmes and their parts (see the [feature README](org_programme_architecture/README.md#programme-page-programmeshtml)). It works from any directory, and relative paths such as `--from-json ./export` are read from the directory you run it in. Run `./org_map.sh --help` for all options.
+`org_map.sh` runs the whole pipeline in one step and opens the page it wrote, `org_map.html`. Add `--programmes` to have Claude explain the bot as programmes and their parts (see the [feature README](org_programme_architecture/README.md#programme-page)). It works from any directory, and relative paths such as `--from-json ./export` are read from the directory you run it in. Run `./org_map.sh --help` for all options.
 
 ## Features
 

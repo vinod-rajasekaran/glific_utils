@@ -5,7 +5,8 @@ Each run writes three files to a new folder, output/org_programme_architecture/<
   flows.json               every active flow with nodes and edges (credentials blanked)
   triggers.json            every trigger, with a readable schedule
   settings.json            the organisation settings that start flows (default, new contact, opt-in, ...)
-  graph.html               the flow map as a graph
+  org_map.html             the page: the flow graph, or with --programmes the programme page
+                           (the full graph is one of its views)
 
 Usage (same env vars as the other scripts; settings can also come from .env):
   python3 build_org_map.py --project "My Bot" --tag "2025 Pilot"
@@ -30,8 +31,7 @@ from render_programmes import render_programme_page
 from programme_claude import MODEL, PROMPT_PATH, ProgrammeError, run_programmes, validate
 from programme_facts import build_facts
 
-HTML_NAME = "graph.html"
-PROGRAMMES_NAME = "programmes.html"
+HTML_NAME = "org_map.html"
 
 
 def check_inputs(flows, triggers, paths=()):
@@ -59,7 +59,7 @@ def main():
                         "(default: today, or the date the --from-json folder name starts with)")
     p.add_argument("--programmes", action="store_true",
                    default=os.environ.get("GLIFIC_PROGRAMMES", "").lower() in ("1", "true", "yes"),
-                   help="also ask Claude to group every active flow into use cases and write programmes.html; "
+                   help="also ask Claude to explain the bot as programmes and their parts, on the same page; "
                         "sends cleaned facts and message excerpts to the Anthropic API (needs ANTHROPIC_API_KEY "
                         "and pip install anthropic; env GLIFIC_PROGRAMMES=1)")
     p.add_argument("--reuse-claude", metavar="DIR", type=Path,
@@ -105,36 +105,32 @@ def main():
     settings = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
                         notes=args.notes.read_text() if args.notes else "")
     page, findings = render_html(flows, triggers, settings, out=sys.stderr, org=org)
-    path = out_dir / HTML_NAME
-    path.write_text(page, encoding="utf-8")
-    pages = [path]
     print("\nFindings:" if findings else "\nFindings: none", file=sys.stderr)
     for f in findings:
         print(f"  {f}", file=sys.stderr)
     if args.programmes or args.reuse_claude:
-        page = programme_step(args, flows, triggers, out_dir, org)
-        if page:
-            pages.insert(0, page)
-    for path in pages:
-        print(f"\nSaved {path}", file=sys.stderr)
-    for path in pages:
-        print(path.resolve())  # the only lines on stdout (one per page, programme page first), so wrappers can open them
+        # One page per run: with programmes, the programme page (the full graph is one of its views)
+        page = programme_step(args, flows, triggers, out_dir, org, Model(flows, triggers, settings, org=org)) or page
+    path = out_dir / HTML_NAME
+    path.write_text(page, encoding="utf-8")
+    print(f"\nSaved {path}", file=sys.stderr)
+    print(path.resolve())  # the only line on stdout, so wrappers can open it
 
 
-def programme_step(args, flows, triggers, out_dir, org=None):
-    """Facts, Claude, validation and the programme page. Returns its path, or None when skipped.
+def programme_step(args, flows, triggers, out_dir, org, graph_model):
+    """Facts, Claude, validation and the programme page. Returns its HTML, or None when skipped.
 
     Nothing that goes wrong here may cost the user the graph page, so every error ends the
     step with a one-line reason."""
     try:
-        return _programme_step(args, flows, triggers, out_dir, org)
+        return _programme_step(args, flows, triggers, out_dir, org, graph_model)
     except Exception as e:   # noqa: BLE001 - deliberately broad, see the docstring
         reason = str(e) if isinstance(e, ProgrammeError) else f"{type(e).__name__}: {e}"
-        print(f"\nThe programme page was skipped: {reason}. The graph page was written as usual.", file=sys.stderr)
+        print(f"\nThe programme page was skipped: {reason}. The graph page was written instead.", file=sys.stderr)
         return None
 
 
-def _programme_step(args, flows, triggers, out_dir, org=None):
+def _programme_step(args, flows, triggers, out_dir, org, graph_model):
     st = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
                   scope_all=True)
     m = Model(flows, triggers, st, org=org)
@@ -149,14 +145,11 @@ def _programme_step(args, flows, triggers, out_dir, org=None):
         print(f"Asking Claude ({MODEL}) to read {len(facts['flows'])} flows; this can take a few minutes...", file=sys.stderr)
         raw, validated, notes = run_programmes(facts)
         save_json(raw, "claude_output.json", out_dir)
-    save_json(dict(validated, dropped=notes), "programmes.json", out_dir)
     if notes:
         print(f"\nValidation dropped {len(notes)} parts of Claude's answer (listed on the page):", file=sys.stderr)
         for n in notes[:10]:
             print(f"  {n}", file=sys.stderr)
-    path = out_dir / PROGRAMMES_NAME
-    path.write_text(render_programme_page(m, facts, validated, notes, st), encoding="utf-8")
-    return path
+    return render_programme_page(m, facts, validated, notes, st, graph_model=graph_model)
 
 
 if __name__ == "__main__":

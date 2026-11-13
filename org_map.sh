@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Map a Glific org in one step: fetch flows, triggers and settings, build graph.html and,
-# with --programmes, programmes.html. Opens the pages it wrote.
+# Map a Glific org in one step: fetch flows, triggers and settings and build org_map.html
+# (the flow graph, or with --programmes the programme page). Opens the page.
 # Output: a new folder per run, output/org_programme_architecture/<YYYY-MM-DD_HH-MM-SS>/. Nothing is overwritten.
 #
 # Usage (works from any folder; relative paths are read from where you run it):

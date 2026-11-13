@@ -1,21 +1,21 @@
 # Org Programme Architecture
 
-Pulls every active flow, every trigger and the organisation's flow settings from a Glific instance, and builds two pages:
+Pulls every active flow, every trigger and the organisation's flow settings from a Glific instance, and builds one page, `org_map.html`:
 
-- **`graph.html`**, the flow map: how every flow starts (schedule, keyword, another flow, a Glific setting or a contact group) and what it leads to, as a graph. Built entirely in Python; no API key needed.
-- **`programmes.html`**, with `--programmes`: Claude reads the flows and explains what the bot does, as a few programmes made of parts, with a graph and a story for each. Every number, link and arrow still comes from the export.
+- **The flow graph**: how every flow starts (schedule, keyword, another flow, a Glific setting or a contact group) and what it leads to. Built entirely in Python; no API key needed.
+- **With `--programmes`, the programme page**: Claude reads the flows and explains what the bot does, as a few programmes made of parts, with a graph and a story for each. The full flow graph is one more view on the same page. Every number, link and arrow still comes from the export.
 
 | File | What it does | Output |
 |---|---|---|
-| [`build_org_map.py`](build_org_map.py) | **Runs everything:** pulls the data, builds the graph page and, with `--programmes`, the programme page | all files below |
+| [`build_org_map.py`](build_org_map.py) | **Runs everything:** pulls the data and builds the page | all files below |
 | [`glific_get_flows.py`](glific_get_flows.py) | Every **active** flow, with its full definition (credentials blanked) | `flows.json` |
 | [`glific_get_triggers.py`](glific_get_triggers.py) | Every **trigger**, active and inactive | `triggers.json` |
 | [`glific_get_settings.py`](glific_get_settings.py) | The **organisation settings** that start flows: default, new contact, opt-in, out-of-office and regex flows | `settings.json` |
-| [`render_graph.py`](render_graph.py) | The model of flows, triggers, groups and links, and the graph page | `graph.html` |
+| [`render_graph.py`](render_graph.py) | The model of flows, triggers, groups and links, and the graph | `org_map.html` |
 | [`graph_layout.py`](graph_layout.py) | Layered left-to-right graph layout (no dependencies) | |
 | [`programme_facts.py`](programme_facts.py) | Cleaned facts about every flow, with IDs, for Claude | `claude_input.json` |
-| [`programme_claude.py`](programme_claude.py) | One Claude call ([prompt](PROGRAMME_PROMPT.md)), then checks every reference against the facts | `claude_output.json`, `programmes.json` |
-| [`render_programmes.py`](render_programmes.py) | The programme page | `programmes.html` |
+| [`programme_claude.py`](programme_claude.py) | One Claude call ([prompt](PROGRAMME_PROMPT.md)), then checks every reference against the facts | `claude_output.json` |
+| [`render_programmes.py`](render_programmes.py) | The programme page, with the full graph as one view | `org_map.html` |
 
 Nothing is tied to a particular org: the tag to focus the graph on is the `--tag` input, and the programme page reads every active flow.
 
@@ -24,8 +24,8 @@ Nothing is tied to a particular org: the tag to focus the graph on is the `--tag
 Set the variables in the [main README](../README.md#setup), then from the repo root:
 
 ```bash
-./org_map.sh --project "My Bot" --tag "2025 Pilot"                 # graph page
-./org_map.sh --project "My Bot" --tag "2025 Pilot" --programmes    # graph page and programme page
+./org_map.sh --project "My Bot" --tag "2025 Pilot"                 # the flow graph
+./org_map.sh --project "My Bot" --tag "2025 Pilot" --programmes    # the programme page, graph included
 ```
 
 Each run writes to a new folder named by the local date and time:
@@ -35,11 +35,9 @@ output/org_programme_architecture/2026-11-13_22-31-13/
 ├── flows.json
 ├── triggers.json
 ├── settings.json
-├── graph.html
 ├── claude_input.json       # with --programmes: exactly what was sent to Claude
-├── claude_output.json      # Claude's raw answer
-├── programmes.json         # the validated answer, and what validation dropped
-└── programmes.html
+├── claude_output.json      # with --programmes: Claude's answer (reuse it with --reuse-claude)
+└── org_map.html            # open in a browser
 ```
 
 ### Options
@@ -50,11 +48,11 @@ output/org_programme_architecture/2026-11-13_22-31-13/
 | `--tag` | `GLIFIC_TAG`, else none | Flow tag the graph starts from. Without it, the graph starts from active triggers and keywords |
 | `--tz` | `GLIFIC_TZ`, else `Asia/Kolkata` | Display time zone: `"IST, UTC+5:30"` or an IANA name. UTC is shown in brackets |
 | `--date` | today, or the date the `--from-json` folder name starts with | Snapshot date (`YYYY-MM-DD`): decides which triggers have ended |
-| `--programmes` | `GLIFIC_PROGRAMMES=1`, else off | Also ask Claude for the programme page. See [Programme page](#programme-page-programmeshtml) |
+| `--programmes` | `GLIFIC_PROGRAMMES=1`, else off | Make the page the programme page, from Claude's reading. See [Programme page](#programme-page) |
 | `--reuse-claude DIR` | | Use Claude's saved answer in `DIR/claude_output.json` instead of calling the API (implies `--programmes`) |
 | `--from-json DIR` | | Rebuild from `flows.json`, `triggers.json` and, if present, `settings.json` saved earlier, with no Glific calls |
 | `--footer` | none | One sentence for the footer |
-| `--notes FILE` | none | Context notes for the graph page (format below) |
+| `--notes FILE` | none | Context notes for the flow graph page (format below) |
 
 **Context notes file.** A line starting with `journey` becomes a strip of small boxes. `f:` marks field people (amber), `d:` data systems (grey) and `c:` chatbot messages (green). Every other line becomes a paragraph in a "Content and data" card.
 
@@ -67,19 +65,19 @@ Keep all the scripts in this folder: they import from each other. Tests: `python
 
 ---
 
-## Programme page (`programmes.html`)
+## Programme page
 
-With `--programmes`, Claude reads every active flow and works out what the bot does, in two levels: a few programmes (for example a maternal and child health pilot), each made of parts (registration, data sync, weekly nudges, question answering). The page opens on one card per programme, with its parts and pills (number of flows, how they start, outside systems, groups, concerns). Selecting one shows a graph of all its flows, each box striped in the colour of its part, beside a side pane with the programme's story end to end and a section per part. Selecting a box shows that flow's purpose, how it starts, where it leads and its full card. Flows from other programmes that connect to this one appear faded; selecting one jumps to its programme.
+With `--programmes`, Claude reads every active flow and works out what the bot does, in two levels: a few programmes (for example a maternal and child health pilot), each made of parts (registration, data sync, weekly nudges, question answering). The page opens on one card per programme, plus a card for the full flow graph, with its parts and pills (number of flows, how they start, outside systems, groups, concerns). Selecting one shows a graph of all its flows, each box striped in the colour of its part, beside a side pane with the programme's story end to end and a section per part. Selecting a box shows that flow's purpose, how it starts, where it leads and its full card. Flows from other programmes that connect to this one appear faded; selecting one jumps to its programme.
 
 **What Claude decides, and what it does not.** Claude groups flows into parts and parts into programmes, names them, gives each flow a purpose and role (core, helper, shared, test, leftover) and writes the stories and concerns. Every number, schedule, group, link and arrow comes from the export. Claude may refer to flows, groups, triggers, links and message excerpts only by the IDs in the facts, and must cite them as evidence with a confidence level (clear, likely, a guess). Python checks every reference: anything that does not match is removed, Claude gets one chance to fix its answer, and whatever is still wrong is listed under "Dropped by validation". Selecting a confidence badge shows the evidence. Claude's text is always labelled "Claude's reading".
 
 **What is sent to the API.** For each flow: its name, tag, keywords, how it starts (including Glific settings), what it leads to, what it touches (webhook hosts, sheets, fields, groups, labels, tickets, staff alerts by template) and up to 25 excerpts of its messages, interactive messages, template names and designers' sticky notes, sticky notes first. Excerpts are cut to 200 characters. Staff contact names become "a staff contact", phone numbers and emails are masked, and links are cut to their host. Webhook credentials were already blanked by the exporter. The exact request is saved as `claude_input.json` before it is sent.
 
-**Requirements and cost.** The `anthropic` package (in `.venv`, see the [main README](../README.md)), and an Anthropic API key in `ANTHROPIC_API_KEY` (or in `.env`). The step uses `claude-opus-5-5` in one call (two if a repair is needed); for an org with about 45 flows the input is roughly 30,000 tokens, the call takes about five minutes and costs under a dollar. Without the package or a key, or if Claude's answer is unusable, the run prints why and still writes the graph page.
+**Requirements and cost.** The `anthropic` package (in `.venv`, see the [main README](../README.md)), and an Anthropic API key in `ANTHROPIC_API_KEY` (or in `.env`). The step uses `claude-opus-5-5` in one call (two if a repair is needed); for an org with about 45 flows the input is roughly 30,000 tokens, the call takes about five minutes and costs under a dollar. Without the package or a key, or if Claude's answer is unusable, the run prints why and writes the flow graph page instead.
 
 ---
 
-## Graph page (`graph.html`)
+## Flow graph
 
 **Input checks.** The two files are hashed, and the run stops if they're identical. It also stops if `flows.json` holds only metadata and no nodes. Flows and triggers are joined on `uuid`, never on name.
 

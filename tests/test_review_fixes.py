@@ -51,7 +51,7 @@ class I1StepNeverLosesGraphPage(unittest.TestCase):
                             "--from-json", str(FIX), "--reuse-claude", bad], capture_output=True, text=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("was skipped", p.stderr)
-        self.assertTrue(p.stdout.split()[0].endswith("graph.html"))
+        self.assertTrue(p.stdout.split()[0].endswith("org_map.html"))
 
 
 class I2RepairFailureKeepsFirstAnswer(unittest.TestCase):

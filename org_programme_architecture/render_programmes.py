@@ -13,7 +13,7 @@ from datetime import datetime
 from string import Template
 
 from render_graph import (PAGE, _Balance, esc, flow_card, fmt_day, graph_svg, join, plural,
-                                 shared_resources, typo)
+                          shared_resources, strip_section, tagging_gaps, typo)
 from programme_claude import MODEL
 
 BASE_CSS = re.search(r"<style>(.*?)</style>", PAGE, re.S).group(1)
@@ -255,7 +255,31 @@ def programme_view(cx, prog, findings, tag):
             + "".join(tpls) + panes + "</section>")
 
 
-def render_programme_page(m, facts, uc, dropped, st):
+GRAPH_LEGEND = ('<div class="legend" aria-label="Legend"><span><i class="sw t"></i>Trigger or keyword</span>'
+                '<span><i class="sw s"></i>Glific setting or no start found</span><span><i class="sw g"></i>Contact group</span>'
+                '<span><i class="sw f"></i>Flow</span><span><i class="ln"></i>Starts the flow</span>'
+                '<span><i class="ln d"></i>Hands over data</span><span><i class="ln g"></i>Fills or empties a group</span></div>')
+
+
+def graph_view(gm, st, findings):
+    """The whole flow graph (the tag's scope, or triggers and keywords without a tag) as one more view."""
+    svg, tpls = graph_svg(gm, gm.edges(), findings, ns="all-")
+    start = f"the flows tagged {st.tag}" if st.tag else "active triggers and keywords"
+    story = (f'<div class="pane-story"><h3 class="ph">How to read it</h3><p class="muted">The graph starts from {esc(start)} '
+             f'and shows {plural(len(gm.on_map), "flow")}. Time runs left to right: how each flow starts, then what it starts '
+             'or hands data to. Select a box to see that flow in detail.</p></div>')
+    below = shared_resources(gm) + strip_section(gm) + tagging_gaps(gm)
+    return (f'<section class="ucview" id="uc-graph" hidden>'
+            f'<p><a class="back" href="#">\u2190 All programmes</a></p>'
+            f'<h2>Full flow graph</h2><p class="lede2">Every flow and how it starts, from the export alone; no Claude reading here.</p>'
+            f'{GRAPH_LEGEND}'
+            f'<div class="ucgrid"><div class="gscroll">{svg}</div>'
+            f'<aside class="pane" aria-live="polite"><button type="button" class="pane-back" hidden>\u2190 Back</button>'
+            f'<div class="pane-body">{story}</div><template class="story-tpl">{story}</template></aside></div>'
+            f'{below}' + "".join(tpls) + "</section>")
+
+
+def render_programme_page(m, facts, uc, dropped, st, graph_model=None):
     cx = _Ctx(m, facts, uc)
     findings = list(m.findings)
     order = sorted(cx.programmes, key=lambda p: p["kind"] == "tests")
@@ -270,6 +294,10 @@ def render_programme_page(m, facts, uc, dropped, st):
                   f'{chips}<div class="pills">{pills(cx, whole, st.tag, brief=True)}</div></a>')
     shared = shared_resources(m)     # before the views, which change the model's graph
     views = "".join(programme_view(cx, p, findings, st.tag) for p in order)
+    if graph_model is not None:
+        views += graph_view(graph_model, st, findings)
+        cards += ('<a class="uccard graphcard" href="#uc-graph"><h3>Full flow graph</h3>'
+                  '<p>Every flow, how it starts and what it leads to, straight from the export.</p></a>')
 
     org = uc["org_summary"]
     org_items = "".join(cx.evidence_item(r) for r in org["evidence"])
@@ -371,6 +399,8 @@ p.ev{padding-left:10px}
 .part summary{cursor:pointer;list-style-position:outside}
 .psum{font-size:13.5px;color:var(--muted);margin:6px 0 0}
 .cardgroup{margin:18px 0 10px}
+.graphcard{border-style:dashed}
+.ucview .legend{margin:8px 0 4px}
 .fgraph .node.faded{opacity:.4}
 .fgraph .node.faded rect{stroke-dasharray:4 3}
 .fgraph .node.sel rect{stroke-width:3;stroke:var(--ink)}
