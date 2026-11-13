@@ -339,11 +339,39 @@ def summarise(g):
     return s
 
 
+# --------------------------------------------------------------------------- Glific settings
+
+def setting_starts(org, flows):
+    """{flow uuid: [(short label, sentence)]} for flows that Glific's organisation settings start.
+
+    org is the settings.json content (see glific_get_settings.py); flows are matched on their
+    numeric id, which is what the settings hold."""
+    if not org:
+        return {}
+    by_id = {str(f.get("id")): f.get("uuid") for f in flows if f.get("id") and f.get("uuid")}
+    ooo = org.get("outOfOffice") or {}
+    regx = org.get("regxFlow") or {}
+    found = [
+        (ooo.get("defaultFlowId"), "Default flow", "Default flow: runs on any incoming message that matches no keyword"),
+        (org.get("newcontactFlowId"), "New contact flow", "New contact flow: runs on the first message from a new contact"),
+        (org.get("optinFlowId"), "Opt-in flow", "Opt-in flow: runs when a contact opts in"),
+        (ooo.get("flowId") if ooo.get("enabled") else None, "Out-of-office flow",
+         "Out-of-office flow: runs on messages that arrive outside working hours"),
+        (regx.get("flowId"), "Regex flow", "Regex flow: runs on messages that match a pattern set in Glific"),
+    ]
+    out = defaultdict(list)
+    for fid, short, text in found:
+        if fid is not None and str(fid) in by_id:
+            out[by_id[str(fid)]].append((short, text))
+    return dict(out)
+
+
 # --------------------------------------------------------------------------- model
 
 class Model:
-    def __init__(self, flows, triggers, st):
+    def __init__(self, flows, triggers, st, org=None):
         self.st = st
+        self.setting_starts = setting_starts(org, flows)
         self.tz, self.tz_label = parse_tz(st.tz)
         self.flows = {f.get("uuid"): f for f in flows if f.get("uuid")}
         self.graphs = {u: FlowGraph(f) for u, f in self.flows.items()}
@@ -357,6 +385,7 @@ class Model:
         self.lanes = []
         self.ncols = 4
         self.no_start = []
+        self.setting_flows = []
         self.group_nodes = {}
         self.linked_group = set()
         if st.layout == "lanes":
@@ -578,8 +607,11 @@ class Model:
         # a keyword box only where the keyword is how the flow starts; otherwise its card lists the keywords
         self.trigger_flows = sorted((u for u in on if self.active_trig.get(u) or (self.flows[u].get("keywords") and u not in called)),
                                     key=by_name)
+        # Flows that Glific's organisation settings start get a "Glific setting" box
+        self.setting_flows = sorted((u for u in on if u in self.setting_starts), key=by_name)
         # "No start found" only when nothing in scope starts the flow, not just nothing on this graph
-        self.no_start = sorted((u for u in on if not self.callers[u] and u not in self.trigger_flows), key=by_name)
+        self.no_start = sorted((u for u in on if not self.callers[u] and u not in self.trigger_flows
+                                and u not in self.setting_starts), key=by_name)
         self.entry = [u for u in self.trigger_flows if u not in called]
 
     def _lanes(self):
@@ -711,6 +743,8 @@ class Model:
         out = []
         for u in self.trigger_flows:
             out.append([f"t-{u}" if self.active_trig.get(u) else f"k-{u}", f"f-{u}", "s"])
+        for u in self.setting_flows:
+            out.append([f"s-{u}", f"f-{u}", "s"])
         for u in self.no_start:
             out.append([f"x-{u}", f"f-{u}", "s"])
         for i, (gname, info) in enumerate(self.group_nodes.items()):
@@ -879,6 +913,7 @@ def flow_rows(m, u):
         row("Feeds", sentence("; ".join(feeds))),
         row("Used by", used_txt),
         row("Trigger", trig),
+        row("Setting", "; ".join(text for _, text in m.setting_starts.get(u, []))),
         row("Note", ". ".join(notes), "wn"),
     ])
 
@@ -1199,7 +1234,7 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset()):
     both is prefixed with ns, so several graphs can share a page. Flows in faded are drawn faded."""
     sizes, kinds = {}, {}
     def size(n):
-        if n[0] in "tkx":
+        if n[0] in "tkxs":
             return TRIG_W, TRIG_H
         if n[0] == "g":
             return GROUP_W, GROUP_H
@@ -1219,7 +1254,7 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset()):
     shift = 2 if groups else 1
     fixed = {n: L + shift for n, L in first.layer.items()}
     for a, b, _ in edges:
-        if a[0] in "tkx":
+        if a[0] in "tkxs":
             fixed[a] = fixed[b] - 1
     for i, (_, info) in enumerate(groups):
         fixed[f"g-{i}"] = min(fixed[f"t-{u}"] for u in info["triggers"]) - 1
@@ -1309,6 +1344,17 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset()):
                     + row("Schedules", "Active triggers that send to this group start " + names_of(m, info["triggers"]))
                     + "</article>")
             label = f"Group {gname}"
+        elif n.startswith("s-"):
+            cls = "node setting"
+            shorts = [x[0] for x in m.setting_starts.get(u, [])]
+            txt = (f'<text class="tname" x="{x + 12:.1f}" y="{y + 21:.1f}">Glific setting</text>'
+                   f'<text class="tmeta" x="{x + 12:.1f}" y="{y + 40:.1f}">{esc(wrap(join(shorts, 2), 28, 1)[0])}</text>')
+            card = ('<article class="card" data-static><div class="ch"><h3>Glific setting</h3></div>'
+                    + row("Starts", m.name(u))
+                    + "".join(row("Runs", text) for _, text in m.setting_starts.get(u, []))
+                    + row("Note", "Set in Glific under Settings, not by a trigger or keyword, so it does not appear in the trigger list.")
+                    + "</article>")
+            label = f"Glific setting that starts {m.name(u)}"
         elif n.startswith("x-"):
             cls = "node nostart"
             txt = (f'<text class="tname" x="{x + 12:.1f}" y="{y + 21:.1f}">No start found</text>'
@@ -1355,10 +1401,10 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset()):
 
 # --------------------------------------------------------------------------- page
 
-def render_html(flows, triggers, settings=None, out=None):
-    """Return (html, findings). Prints intermediate tables to `out` when given."""
+def render_html(flows, triggers, settings=None, out=None, org=None):
+    """Return (html, findings). Prints intermediate tables to `out` when given. org is settings.json."""
     st = settings or Settings()
-    m = Model(flows, triggers, st)
+    m = Model(flows, triggers, st, org=org)
     findings = m.findings
     edges = m.edges()
 
@@ -1420,7 +1466,7 @@ def render_html(flows, triggers, settings=None, out=None):
         tag_legend=esc(f"Flow tagged {st.tag}" if st.tag else "Flow"),
         untag_legend='<span><i class="sw u"></i>Flow without that tag</span>' if st.tag else "",
         map=map_html,
-        legend_extra=('\n  <span><i class="sw g"></i>Contact group</span><span><i class="ln g"></i>Adds to or removes from a group</span>'
+        legend_extra=('\n  <span><i class="sw s"></i>Glific setting</span><span><i class="sw g"></i>Contact group</span><span><i class="ln g"></i>Adds to or removes from a group</span>'
                       '\n  <span><i class="sw s"></i>No start found in the export</span>') if st.layout == "graph" else "",
         script=script,
         notes=shared_resources(m),
@@ -1553,6 +1599,7 @@ details p{margin:6px 0 0}
 .fgraph .node rect{fill:var(--flow-bg);stroke:var(--flow);stroke-width:1.3}
 .fgraph .node.untagged rect{fill:var(--surface);stroke:var(--muted);stroke-dasharray:5 4}
 .fgraph .node.trig rect{fill:var(--trig-bg);stroke:var(--trig)}
+.fgraph .node.setting rect{fill:var(--slate-bg);stroke:var(--slate)}
 .fgraph .node.nostart rect{fill:var(--slate-bg);stroke:var(--slate);stroke-dasharray:3 3}
 .fgraph .node.grp rect{fill:var(--chat-bg);stroke:var(--chat);rx:26}
 .fgraph .edge.grp path{stroke:var(--chat);stroke-dasharray:2 4;stroke-linecap:round}

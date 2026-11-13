@@ -4,6 +4,7 @@
 Each run writes three files to a new folder, output/get_system_flow_architecture/<YYYY-MM-DD_HH-MM-SS>/:
   flows.json               every active flow with nodes and edges (credentials blanked)
   triggers.json            every trigger, with a readable schedule
+  settings.json            the organisation settings that start flows (default, new contact, opt-in, ...)
   flow_architecture.html   the flow map (with --layout all, also flow_architecture_lanes.html and _graph.html)
 
 Usage (same env vars as the other scripts; settings can also come from .env):
@@ -22,6 +23,7 @@ from datetime import date
 from pathlib import Path
 
 from glific_get_flows import fetch_flows, login, run_dir, save_json
+from glific_get_settings import fetch_settings
 from glific_get_triggers import fetch_triggers
 from render_architecture import Model, Settings, render_html
 from render_usecases import render_usecase_page
@@ -87,6 +89,12 @@ def main():
         for x in paths:   # keep each run folder complete; the source folder stays as it was
             shutil.copy2(x, out_dir / x.name)
         print(f"Copied {args.from_json}/{{flows,triggers}}.json to {out_dir}", file=sys.stderr)
+        org = {}
+        if (args.from_json / "settings.json").is_file():
+            org = json.loads((args.from_json / "settings.json").read_text())
+            shutil.copy2(args.from_json / "settings.json", out_dir / "settings.json")
+        else:
+            print("No settings.json in that folder, so flows started by Glific settings show as 'No start found'.", file=sys.stderr)
     else:
         token = login()
         flows = fetch_flows(token)
@@ -95,13 +103,15 @@ def main():
         out_dir = run_dir()
         print(f"Saved {save_json(flows, 'flows.json', out_dir)}", file=sys.stderr)
         print(f"Saved {save_json(triggers, 'triggers.json', out_dir)}", file=sys.stderr)
+        org = fetch_settings(token)
+        print(f"Saved {save_json(org, 'settings.json', out_dir)}", file=sys.stderr)
 
     layouts = ["columns", "lanes", "graph"] if args.layout == "all" else [args.layout]
     pages = []
     for i, layout in enumerate(layouts):
         settings = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
                             notes=args.notes.read_text() if args.notes else "", layout=layout)
-        page, findings = render_html(flows, triggers, settings, out=sys.stderr if i == 0 else None)
+        page, findings = render_html(flows, triggers, settings, out=sys.stderr if i == 0 else None, org=org)
         name = HTML_NAME if layout == layouts[0] else HTML_NAME.replace(".html", f"_{layout}.html")
         path = out_dir / name
         path.write_text(page, encoding="utf-8")
@@ -110,7 +120,7 @@ def main():
     for f in findings:
         print(f"  {f}", file=sys.stderr)
     if args.usecases or args.reuse_claude:
-        page = usecase_step(args, flows, triggers, out_dir)
+        page = usecase_step(args, flows, triggers, out_dir, org)
         if page:
             pages.insert(0, page)
     for path in pages:
@@ -119,23 +129,23 @@ def main():
         print(path.resolve())  # the only lines on stdout (one per page, use-case page first), so wrappers can open them
 
 
-def usecase_step(args, flows, triggers, out_dir):
+def usecase_step(args, flows, triggers, out_dir, org=None):
     """Facts, Claude, validation and the use-case page. Returns its path, or None when skipped.
 
     Nothing that goes wrong here may cost the user the graph page, so every error ends the
     step with a one-line reason."""
     try:
-        return _usecase_step(args, flows, triggers, out_dir)
+        return _usecase_step(args, flows, triggers, out_dir, org)
     except Exception as e:   # noqa: BLE001 - deliberately broad, see the docstring
         reason = str(e) if isinstance(e, UsecaseError) else f"{type(e).__name__}: {e}"
         print(f"\nThe use-case page was skipped: {reason}. The graph page was written as usual.", file=sys.stderr)
         return None
 
 
-def _usecase_step(args, flows, triggers, out_dir):
+def _usecase_step(args, flows, triggers, out_dir, org=None):
     st = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
                   layout="graph", scope_all=True)
-    m = Model(flows, triggers, st)
+    m = Model(flows, triggers, st, org=org)
     facts = build_facts(m)
     save_json({"model": MODEL, "system": PROMPT_PATH.read_text(encoding="utf-8"), "facts": facts}, "claude_input.json", out_dir)
     if args.reuse_claude:

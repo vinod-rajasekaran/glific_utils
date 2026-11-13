@@ -197,6 +197,8 @@ def build_facts(m):
         for t in m.active_trig.get(u, []):
             gs = join(names(t.get("groups")) + names(t.get("waGroups")), 4) or "no group"
             starts_from.append({"kind": "trigger", "ref": f"trigger:{t.get('id')}", "text": f"{schedule_text(t, m.tz, [])}, to {gs}"})
+        for _, text in m.setting_starts.get(u, []):
+            starts_from.append({"kind": "setting", "ref": "", "text": text})
         if f.get("keywords"):
             starts_from.append({"kind": "keyword", "ref": "", "text": "a contact sends " + join(f["keywords"], 20, "or")})
         for c, n in sorted(m.callers.get(u, {}).items(), key=lambda cn: m.name(cn[0]).lower()):

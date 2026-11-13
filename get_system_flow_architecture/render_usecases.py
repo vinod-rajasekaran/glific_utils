@@ -99,8 +99,9 @@ def pills(cx, u, tag):
             if s["kind"] == "flow" and s["ref"] in members:
                 continue
             kinds[s["kind"]] += 1
-    names = {"trigger": "Schedule", "keyword": "Keyword", "flow": "Started from another use case", "none": "No start found"}
-    out += [(names[k], "warn" if k == "none" else "") for k in ("trigger", "keyword", "flow", "none") if kinds[k]]
+    names = {"trigger": "Schedule", "setting": "Glific setting", "keyword": "Keyword", "flow": "Started from another use case",
+             "none": "No start found"}
+    out += [(names[k], "warn" if k == "none" else "") for k in ("trigger", "setting", "keyword", "flow", "none") if kinds[k]]
     hosts, functions, sheets, alerts, groups = set(), False, False, False, set()
     for fid in members:
         s = m.sum[fid]
