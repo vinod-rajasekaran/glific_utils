@@ -1,12 +1,12 @@
 """One Claude call that reads the facts and returns the org's use cases, then validation.
 
-    run_usecases(facts, client=None) -> (raw, validated, notes)
+    run_programmes(facts, client=None) -> (raw, validated, notes)
 
 Claude returns structured JSON (enforced by SCHEMA). validate() checks every ID and
 evidence reference against the facts and drops what does not match. When the first
 response has problems, Claude gets one chance to fix them; after that, problems only
 remove the items they affect, and the notes say what was removed. A response that is
-unusable as a whole raises UsecaseError, and the caller falls back to the graph page.
+unusable as a whole raises ProgrammeError, and the caller falls back to the graph page.
 """
 import json
 import re
@@ -15,13 +15,13 @@ from pathlib import Path
 MODEL = "claude-opus-5-5"
 EFFORT = "high"
 MAX_TOKENS = 128000
-PROMPT_PATH = Path(__file__).resolve().parent / "USECASE_PROMPT.md"
+PROMPT_PATH = Path(__file__).resolve().parent / "PROGRAMME_PROMPT.md"
 CONFIDENCE = ["clear", "likely", "guess"]
 ROLES = ["core", "helper", "shared", "test", "leftover", "unknown"]
 KINDS = ["journey", "support", "admin", "tests"]
 
 
-class UsecaseError(Exception):
+class ProgrammeError(Exception):
     """The Claude step produced nothing usable; the run continues with the graph page."""
 
 
@@ -56,11 +56,11 @@ def _client():
     try:
         import anthropic
     except ImportError as e:
-        raise UsecaseError("the anthropic package is not installed (pip install anthropic)") from e
+        raise ProgrammeError("the anthropic package is not installed (pip install anthropic)") from e
     try:
         return anthropic.Anthropic()
     except Exception as e:   # no credentials found
-        raise UsecaseError(f"no Anthropic credentials: {e}") from e
+        raise ProgrammeError(f"no Anthropic credentials: {e}") from e
 
 
 def call_claude(facts, client=None, repair_errors=None, previous=None):
@@ -85,21 +85,21 @@ def call_claude(facts, client=None, repair_errors=None, previous=None):
             messages=messages,
         ) as stream:
             msg = stream.get_final_message()
-    except UsecaseError:
+    except ProgrammeError:
         raise
     except Exception as e:   # API, network and auth errors all end the Claude step the same way
-        raise UsecaseError(f"the Claude API call failed: {type(e).__name__}: {e}") from e
+        raise ProgrammeError(f"the Claude API call failed: {type(e).__name__}: {e}") from e
     if msg.stop_reason == "refusal":
         detail = getattr(getattr(msg, "stop_details", None), "category", None)
-        raise UsecaseError(f"Claude declined the request{f' ({detail})' if detail else ''}")
+        raise ProgrammeError(f"Claude declined the request{f' ({detail})' if detail else ''}")
     if msg.stop_reason == "max_tokens":
-        raise UsecaseError("Claude's answer was cut off at the output limit")
+        raise ProgrammeError("Claude's answer was cut off at the output limit")
     # Join every text block: after a mid-stream refusal fallback the answer continues in a new block
     text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
     try:
         return json.loads(text)
     except ValueError as e:
-        raise UsecaseError("Claude's answer was not valid JSON") from e
+        raise ProgrammeError("Claude's answer was not valid JSON") from e
 
 
 def _slug(text, taken):
@@ -119,9 +119,9 @@ def _section(obj, name):
 
 
 def validate(out, facts):
-    """Return (cleaned output, problems). Raises UsecaseError when nothing usable is left."""
+    """Return (cleaned output, problems). Raises ProgrammeError when nothing usable is left."""
     if not isinstance(out, dict) or not isinstance(out.get("use_cases"), list):
-        raise UsecaseError("Claude's answer has no list of use cases")
+        raise ProgrammeError("Claude's answer has no list of use cases")
     flow_ids = [f["id"] for f in facts["flows"]]
     names = {f["id"]: f["name"] for f in facts["flows"]}
     known_refs = set(flow_ids) | {g["id"] for g in facts["groups"]} | {t["id"] for t in facts["triggers"]}
@@ -173,7 +173,7 @@ def validate(out, facts):
             "confidence": u.get("confidence") if u.get("confidence") in CONFIDENCE else "guess",
         })
     if not use_cases:
-        raise UsecaseError("none of Claude's use cases refer to flows in the facts")
+        raise ProgrammeError("none of Claude's use cases refer to flows in the facts")
     uc_of = {fid: u["id"] for u in use_cases for fid in u["flows"]}
 
     given = {}
@@ -277,7 +277,7 @@ def _wrap(u, taken=()):
             "story": [], "watch": [], "confidence": u["confidence"]}
 
 
-def run_usecases(facts, client=None):
+def run_programmes(facts, client=None):
     """Call Claude, validate, and repair once if needed. Returns (raw answer, validated, notes on what was dropped).
 
     If the repair call fails or its answer is unusable, the first answer is kept (with its problems
@@ -286,14 +286,14 @@ def run_usecases(facts, client=None):
     raw = call_claude(facts, client)
     try:
         validated, problems = validate(raw, facts)
-    except UsecaseError as e:
+    except ProgrammeError as e:
         problems, validated = [str(e)], None
     if not problems:
         return raw, validated, []
     try:
         raw2 = call_claude(facts, client, repair_errors=problems, previous=raw)
         validated2, problems2 = validate(raw2, facts)
-    except UsecaseError as e:
+    except ProgrammeError as e:
         if validated is None:
             raise
         return raw, validated, problems + [f"The repair call failed ({e}), so Claude's first answer is shown."]

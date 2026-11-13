@@ -6,9 +6,9 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "get_system_flow_architecture"))
+sys.path.insert(0, str(ROOT / "org_programme_architecture"))
 
-import render_architecture as ra  # noqa: E402
+import render_graph as ra  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 
@@ -19,7 +19,7 @@ def load():
 
 def model(**kw):
     flows, triggers = load()
-    st = ra.Settings(layout="graph", today=date(2026, 11, 13), **kw)
+    st = ra.Settings(today=date(2026, 11, 13), **kw)
     return ra.Model(flows, triggers, st)
 
 
@@ -60,9 +60,9 @@ class GraphSubsetTest(unittest.TestCase):
 
     def test_render_is_deterministic(self):
         import subprocess
-        code = ("import sys,json;sys.path.insert(0,'get_system_flow_architecture');import render_architecture as r;"
+        code = ("import sys,json;sys.path.insert(0,'org_programme_architecture');import render_graph as r;"
                 "from datetime import date;f=json.load(open('tests/fixtures/flows.json'));t=json.load(open('tests/fixtures/triggers.json'));"
-                "print(r.render_html(f,t,r.Settings(layout='graph',today=date(2026,11,13)))[0])")
+                "print(r.render_html(f,t,r.Settings(today=date(2026,11,13)))[0])")
         outs = {subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True,
                                env={"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"}).stdout for seed in ("1", "2", "3")}
         self.assertEqual(len(outs), 1)

@@ -1,4 +1,4 @@
-"""Facts about every flow, with stable IDs and cleaned excerpts, for the use-case step.
+"""Facts about every flow, with stable IDs and cleaned excerpts, for the programme step.
 
     build_facts(model) -> dict     everything Claude may read, and the IDs it may cite
     clean_text(text, staff_names)  privacy cleaning applied to every excerpt
@@ -13,7 +13,7 @@ import unicodedata
 from collections import Counter
 from urllib.parse import urlsplit
 
-from render_architecture import join, names, schedule_text, times
+from render_graph import join, names, schedule_text, times
 
 EXCERPT_CHARS = 200
 MAX_EXCERPTS = 25                                   # per flow: sticky notes first, then messages in order

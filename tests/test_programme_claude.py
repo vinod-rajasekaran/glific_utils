@@ -7,11 +7,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "get_system_flow_architecture"))
+sys.path.insert(0, str(ROOT / "org_programme_architecture"))
 
-import render_architecture as ra  # noqa: E402
-import usecase_claude as uc  # noqa: E402
-import usecase_facts as uf  # noqa: E402
+import render_graph as ra  # noqa: E402
+import programme_claude as uc  # noqa: E402
+import programme_facts as uf  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 U = lambda n: f"00000000-0000-4000-8000-{n:012d}"  # noqa: E731
@@ -20,7 +20,7 @@ U = lambda n: f"00000000-0000-4000-8000-{n:012d}"  # noqa: E731
 def facts():
     flows = json.loads((FIX / "flows.json").read_text())
     triggers = json.loads((FIX / "triggers.json").read_text())
-    return uf.build_facts(ra.Model(flows, triggers, ra.Settings(layout="graph", scope_all=True, today=date(2026, 11, 13))))
+    return uf.build_facts(ra.Model(flows, triggers, ra.Settings(scope_all=True, today=date(2026, 11, 13))))
 
 
 def raw():
@@ -110,7 +110,7 @@ class CallTest(unittest.TestCase):
 
     def test_request_shape(self):
         client = FakeClient(self.good())
-        uc.run_usecases(facts(), client=client)
+        uc.run_programmes(facts(), client=client)
         kw = client.calls[0]
         self.assertEqual(kw["model"], "claude-opus-5-5")
         self.assertEqual(kw["output_config"]["format"]["type"], "json_schema")
@@ -120,7 +120,7 @@ class CallTest(unittest.TestCase):
 
     def test_repair_called_once(self):
         client = FakeClient(raw(), self.good())
-        _, validated, notes = uc.run_usecases(facts(), client=client)
+        _, validated, notes = uc.run_programmes(facts(), client=client)
         self.assertEqual(len(client.calls), 2)
         self.assertIn("999999999999", client.calls[1]["messages"][-1]["content"])
         self.assertEqual(notes, [])
@@ -128,18 +128,18 @@ class CallTest(unittest.TestCase):
 
     def test_second_failure_degrades(self):
         client = FakeClient(raw(), raw())
-        _, validated, notes = uc.run_usecases(facts(), client=client)
+        _, validated, notes = uc.run_programmes(facts(), client=client)
         self.assertEqual(len(client.calls), 2)
         self.assertTrue(notes)
         self.assertIn("weekly-tips", [u["id"] for u in validated["use_cases"]])
 
     def test_unusable_raises(self):
-        with self.assertRaises(uc.UsecaseError):
-            uc.run_usecases(facts(), client=FakeClient({}, {}))
+        with self.assertRaises(uc.ProgrammeError):
+            uc.run_programmes(facts(), client=FakeClient({}, {}))
 
     def test_refusal_raises(self):
-        with self.assertRaises(uc.UsecaseError):
-            uc.run_usecases(facts(), client=FakeClient(self.good(), stop_reason="refusal"))
+        with self.assertRaises(uc.ProgrammeError):
+            uc.run_programmes(facts(), client=FakeClient(self.good(), stop_reason="refusal"))
 
     def test_schema_is_strict(self):
         def walk(node):

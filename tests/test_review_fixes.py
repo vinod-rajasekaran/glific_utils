@@ -11,13 +11,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "get_system_flow_architecture"))
+sys.path.insert(0, str(ROOT / "org_programme_architecture"))
 
-import render_architecture as ra  # noqa: E402
-import render_usecases as ru  # noqa: E402
-import usecase_claude as uc  # noqa: E402
-import usecase_facts as uf  # noqa: E402
-from tests.test_usecase_claude import FakeClient, U, facts, raw  # noqa: E402
+import render_graph as ra  # noqa: E402
+import render_programmes as ru  # noqa: E402
+import programme_claude as uc  # noqa: E402
+import programme_facts as uf  # noqa: E402
+from tests.test_programme_claude import FakeClient, U, facts, raw  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 
@@ -25,7 +25,7 @@ FIX = ROOT / "tests" / "fixtures"
 def model():
     flows = json.loads((FIX / "flows.json").read_text())
     triggers = json.loads((FIX / "triggers.json").read_text())
-    return ra.Model(flows, triggers, ra.Settings(project="Demo", layout="graph", scope_all=True, today=date(2026, 11, 13)))
+    return ra.Model(flows, triggers, ra.Settings(project="Demo", scope_all=True, today=date(2026, 11, 13)))
 
 
 class C1NoFalseNoStart(unittest.TestCase):
@@ -47,17 +47,17 @@ class I1StepNeverLosesGraphPage(unittest.TestCase):
         out = tempfile.mkdtemp()
         env = {k: v for k, v in os.environ.items() if not k.startswith(("GLIFIC_", "ANTHROPIC_"))}
         env.update(GLIFIC_OUTPUT_ROOT=out, GLIFIC_NO_DOTENV="1")
-        p = subprocess.run([sys.executable, str(ROOT / "get_system_flow_architecture" / "build_flow_architecture.py"),
+        p = subprocess.run([sys.executable, str(ROOT / "org_programme_architecture" / "build_org_map.py"),
                             "--from-json", str(FIX), "--reuse-claude", bad], capture_output=True, text=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("was skipped", p.stderr)
-        self.assertTrue(p.stdout.split()[0].endswith("flow_architecture.html"))
+        self.assertTrue(p.stdout.split()[0].endswith("graph.html"))
 
 
 class I2RepairFailureKeepsFirstAnswer(unittest.TestCase):
     def test_failed_repair_keeps_first_answer(self):
         client = FakeClient(raw(), RuntimeError("network down"))
-        got_raw, validated, notes = uc.run_usecases(facts(), client=client)
+        got_raw, validated, notes = uc.run_programmes(facts(), client=client)
         self.assertEqual(len(client.calls), 2)
         self.assertIn("weekly-tips", [u["id"] for u in validated["use_cases"]])
         self.assertTrue(any("999999999999" in n for n in notes))
@@ -102,7 +102,7 @@ class I5ClaudeTextLabelled(unittest.TestCase):
         m = model()
         f = uf.build_facts(m)
         v, p = uc.validate(raw(), f)
-        cls.page = ru.render_usecase_page(m, f, v, p, m.st)
+        cls.page = ru.render_programme_page(m, f, v, p, m.st)
         i = cls.page.index('id="home"')
         cls.home = cls.page[i:cls.page.index('<h2 style="margin:26px', i) + 4000]
 

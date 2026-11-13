@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Pull all flows and triggers from Glific and build an HTML flow map (spec: PROMPT_SPEC.md).
+"""Pull all flows and triggers from Glific and build the graph page and, with --programmes, the programme page.
 
-Each run writes three files to a new folder, output/get_system_flow_architecture/<YYYY-MM-DD_HH-MM-SS>/:
+Each run writes three files to a new folder, output/org_programme_architecture/<YYYY-MM-DD_HH-MM-SS>/:
   flows.json               every active flow with nodes and edges (credentials blanked)
   triggers.json            every trigger, with a readable schedule
   settings.json            the organisation settings that start flows (default, new contact, opt-in, ...)
-  flow_architecture.html   the flow map (with --layout all, also flow_architecture_lanes.html and _graph.html)
+  graph.html               the flow map as a graph
 
 Usage (same env vars as the other scripts; settings can also come from .env):
-  python3 build_flow_architecture.py --project "My Bot" --tag "2025 Pilot"
-  python3 build_flow_architecture.py --from-json output/get_system_flow_architecture/2026-11-11_21-43-05 --tag "2025 Pilot"
+  python3 build_org_map.py --project "My Bot" --tag "2025 Pilot"
+  python3 build_org_map.py --from-json output/org_programme_architecture/2026-11-11_21-43-05 --tag "2025 Pilot"
       # re-render from JSON saved earlier, without calling the API. The result goes to a new
       # run folder with copies of the JSON; the source folder is not touched.
 """
@@ -25,13 +25,13 @@ from pathlib import Path
 from glific_get_flows import fetch_flows, login, run_dir, save_json
 from glific_get_settings import fetch_settings
 from glific_get_triggers import fetch_triggers
-from render_architecture import Model, Settings, render_html
-from render_usecases import render_usecase_page
-from usecase_claude import MODEL, PROMPT_PATH, UsecaseError, run_usecases, validate
-from usecase_facts import build_facts
+from render_graph import Model, Settings, render_html
+from render_programmes import render_programme_page
+from programme_claude import MODEL, PROMPT_PATH, ProgrammeError, run_programmes, validate
+from programme_facts import build_facts
 
-HTML_NAME = "flow_architecture.html"
-USECASE_NAME = "flow_usecases.html"
+HTML_NAME = "graph.html"
+PROGRAMMES_NAME = "programmes.html"
 
 
 def check_inputs(flows, triggers, paths=()):
@@ -57,17 +57,13 @@ def main():
     p.add_argument("--date", type=date.fromisoformat, default=None,
                    help="the snapshot date, YYYY-MM-DD: decides which triggers have ended "
                         "(default: today, or the date the --from-json folder name starts with)")
-    p.add_argument("--layout", choices=["columns", "lanes", "graph", "all"], default=os.environ.get("GLIFIC_LAYOUT", "graph"),
-                   help="columns: cards grouped by role; lanes: one lane per journey, columns by step; "
-                        "graph: small nodes laid out left to right, with details on click; "
-                        "all: write every layout to compare (default: graph)")
-    p.add_argument("--usecases", action="store_true",
-                   default=os.environ.get("GLIFIC_USECASES", "").lower() in ("1", "true", "yes"),
-                   help="also ask Claude to group every active flow into use cases and write flow_usecases.html; "
+    p.add_argument("--programmes", action="store_true",
+                   default=os.environ.get("GLIFIC_PROGRAMMES", "").lower() in ("1", "true", "yes"),
+                   help="also ask Claude to group every active flow into use cases and write programmes.html; "
                         "sends cleaned facts and message excerpts to the Anthropic API (needs ANTHROPIC_API_KEY "
-                        "and pip install anthropic; env GLIFIC_USECASES=1)")
+                        "and pip install anthropic; env GLIFIC_PROGRAMMES=1)")
     p.add_argument("--reuse-claude", metavar="DIR", type=Path,
-                   help="with the use-case page: read Claude's answer from DIR/claude_output.json instead of calling the API")
+                   help="with the programme page: read Claude's answer from DIR/claude_output.json instead of calling the API")
     p.add_argument("--footer", default="", help="one sentence for the footer")
     p.add_argument("--notes", type=Path, help="text file with context notes (see README)")
     args = p.parse_args()
@@ -106,45 +102,41 @@ def main():
         org = fetch_settings(token)
         print(f"Saved {save_json(org, 'settings.json', out_dir)}", file=sys.stderr)
 
-    layouts = ["columns", "lanes", "graph"] if args.layout == "all" else [args.layout]
-    pages = []
-    for i, layout in enumerate(layouts):
-        settings = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
-                            notes=args.notes.read_text() if args.notes else "", layout=layout)
-        page, findings = render_html(flows, triggers, settings, out=sys.stderr if i == 0 else None, org=org)
-        name = HTML_NAME if layout == layouts[0] else HTML_NAME.replace(".html", f"_{layout}.html")
-        path = out_dir / name
-        path.write_text(page, encoding="utf-8")
-        pages.append(path)
+    settings = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
+                        notes=args.notes.read_text() if args.notes else "")
+    page, findings = render_html(flows, triggers, settings, out=sys.stderr, org=org)
+    path = out_dir / HTML_NAME
+    path.write_text(page, encoding="utf-8")
+    pages = [path]
     print("\nFindings:" if findings else "\nFindings: none", file=sys.stderr)
     for f in findings:
         print(f"  {f}", file=sys.stderr)
-    if args.usecases or args.reuse_claude:
-        page = usecase_step(args, flows, triggers, out_dir, org)
+    if args.programmes or args.reuse_claude:
+        page = programme_step(args, flows, triggers, out_dir, org)
         if page:
             pages.insert(0, page)
     for path in pages:
         print(f"\nSaved {path}", file=sys.stderr)
     for path in pages:
-        print(path.resolve())  # the only lines on stdout (one per page, use-case page first), so wrappers can open them
+        print(path.resolve())  # the only lines on stdout (one per page, programme page first), so wrappers can open them
 
 
-def usecase_step(args, flows, triggers, out_dir, org=None):
-    """Facts, Claude, validation and the use-case page. Returns its path, or None when skipped.
+def programme_step(args, flows, triggers, out_dir, org=None):
+    """Facts, Claude, validation and the programme page. Returns its path, or None when skipped.
 
     Nothing that goes wrong here may cost the user the graph page, so every error ends the
     step with a one-line reason."""
     try:
-        return _usecase_step(args, flows, triggers, out_dir, org)
+        return _programme_step(args, flows, triggers, out_dir, org)
     except Exception as e:   # noqa: BLE001 - deliberately broad, see the docstring
-        reason = str(e) if isinstance(e, UsecaseError) else f"{type(e).__name__}: {e}"
-        print(f"\nThe use-case page was skipped: {reason}. The graph page was written as usual.", file=sys.stderr)
+        reason = str(e) if isinstance(e, ProgrammeError) else f"{type(e).__name__}: {e}"
+        print(f"\nThe programme page was skipped: {reason}. The graph page was written as usual.", file=sys.stderr)
         return None
 
 
-def _usecase_step(args, flows, triggers, out_dir, org=None):
+def _programme_step(args, flows, triggers, out_dir, org=None):
     st = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
-                  layout="graph", scope_all=True)
+                  scope_all=True)
     m = Model(flows, triggers, st, org=org)
     facts = build_facts(m)
     save_json({"model": MODEL, "system": PROMPT_PATH.read_text(encoding="utf-8"), "facts": facts}, "claude_input.json", out_dir)
@@ -155,15 +147,15 @@ def _usecase_step(args, flows, triggers, out_dir, org=None):
         print(f"Using Claude's saved answer from {args.reuse_claude}", file=sys.stderr)
     else:
         print(f"Asking Claude ({MODEL}) to read {len(facts['flows'])} flows; this can take a few minutes...", file=sys.stderr)
-        raw, validated, notes = run_usecases(facts)
+        raw, validated, notes = run_programmes(facts)
         save_json(raw, "claude_output.json", out_dir)
-    save_json(dict(validated, dropped=notes), "usecases.json", out_dir)
+    save_json(dict(validated, dropped=notes), "programmes.json", out_dir)
     if notes:
         print(f"\nValidation dropped {len(notes)} parts of Claude's answer (listed on the page):", file=sys.stderr)
         for n in notes[:10]:
             print(f"  {n}", file=sys.stderr)
-    path = out_dir / USECASE_NAME
-    path.write_text(render_usecase_page(m, facts, validated, notes, st), encoding="utf-8")
+    path = out_dir / PROGRAMMES_NAME
+    path.write_text(render_programme_page(m, facts, validated, notes, st), encoding="utf-8")
     return path
 
 

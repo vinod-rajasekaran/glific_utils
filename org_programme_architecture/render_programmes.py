@@ -1,6 +1,6 @@
-"""The use-case page: the org's use cases first, then each one as a graph with a side pane.
+"""The programme page: the org's programmes first, then each one as a graph with a side pane.
 
-    render_usecase_page(model, facts, validated, dropped, settings) -> html
+    render_programme_page(model, facts, validated, dropped, settings) -> html
 
 Everything Claude wrote is shown under "Claude's reading" with its confidence, and each
 statement opens to the evidence it cites. Every number, link, schedule and group comes from
@@ -12,9 +12,9 @@ from collections import Counter
 from datetime import datetime
 from string import Template
 
-from render_architecture import (PAGE, _Balance, esc, flow_card, fmt_day, graph_svg, join, plural,
+from render_graph import (PAGE, _Balance, esc, flow_card, fmt_day, graph_svg, join, plural,
                                  shared_resources, typo)
-from usecase_claude import MODEL
+from programme_claude import MODEL
 
 BASE_CSS = re.search(r"<style>(.*?)</style>", PAGE, re.S).group(1)
 ROLE_LABEL = {"core": "Core", "helper": "Helper", "shared": "Shared", "test": "Test", "leftover": "Leftover", "unknown": "Role unclear"}
@@ -188,7 +188,7 @@ def flow_pane(cx, fid, findings):
             rows.append(f"<li>{t(s['text'])}{link}</li>")
         return f'<h4>{esc(heading)}</h4><ul class="io">{"".join(rows)}</ul>' if rows else ""
 
-    card = re.sub(r' data-id="[^"]*"', "", flow_card(cx.m, fid, placed=False))
+    card = re.sub(r' data-id="[^"]*"', "", flow_card(cx.m, fid))
     return (head + purpose + where + io(f["starts_from"], "How it starts") + io(f["leads_to"], "Where it leads")
             + card)
 
@@ -246,7 +246,7 @@ def programme_view(cx, prog, findings, tag):
             + "".join(tpls) + panes + "</section>")
 
 
-def render_usecase_page(m, facts, uc, dropped, st):
+def render_programme_page(m, facts, uc, dropped, st):
     cx = _Ctx(m, facts, uc)
     findings = list(m.findings)
     order = sorted(cx.programmes, key=lambda p: p["kind"] == "tests")

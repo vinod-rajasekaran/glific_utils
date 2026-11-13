@@ -6,12 +6,12 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "get_system_flow_architecture"))
+sys.path.insert(0, str(ROOT / "org_programme_architecture"))
 
-import render_architecture as ra  # noqa: E402
-import render_usecases as ru  # noqa: E402
-import usecase_claude as uc  # noqa: E402
-import usecase_facts as uf  # noqa: E402
+import render_graph as ra  # noqa: E402
+import render_programmes as ru  # noqa: E402
+import programme_claude as uc  # noqa: E402
+import programme_facts as uf  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 U = lambda n: f"00000000-0000-4000-8000-{n:012d}"  # noqa: E731
@@ -20,7 +20,7 @@ U = lambda n: f"00000000-0000-4000-8000-{n:012d}"  # noqa: E731
 def setup(name):
     flows = json.loads((FIX / "flows.json").read_text())
     triggers = json.loads((FIX / "triggers.json").read_text())
-    st = ra.Settings(project="Demo", layout="graph", scope_all=True, today=date(2026, 11, 13))
+    st = ra.Settings(project="Demo", scope_all=True, today=date(2026, 11, 13))
     m = ra.Model(flows, triggers, st)
     facts = uf.build_facts(m)
     v, p = uc.validate(json.loads((FIX / name).read_text()), facts)
@@ -56,7 +56,7 @@ class ValidateTest(unittest.TestCase):
         raw["programmes"] = raw["programmes"][:1]          # "tests" use case now in no programme
         flows = json.loads((FIX / "flows.json").read_text())
         triggers = json.loads((FIX / "triggers.json").read_text())
-        m = ra.Model(flows, triggers, ra.Settings(layout="graph", scope_all=True, today=date(2026, 11, 13)))
+        m = ra.Model(flows, triggers, ra.Settings(scope_all=True, today=date(2026, 11, 13)))
         v, p = uc.validate(raw, uf.build_facts(m))
         self.assertIn(["tests"], [x["parts"] for x in v["programmes"]])
         self.assertTrue(any("not in any programme" in x for x in p))
@@ -69,7 +69,7 @@ class RenderTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         m, facts, v, p, st = setup("claude_output_programmes.json")
-        cls.page = ru.render_usecase_page(m, facts, v, p, st)
+        cls.page = ru.render_programme_page(m, facts, v, p, st)
         i = cls.page.index('id="home"')
         cls.home = cls.page[i:cls.page.index("</section>", i)]
 
@@ -115,7 +115,7 @@ class CompactSchemaTest(unittest.TestCase):
             p["statements"] = [dict(s, section="story") for s in p.pop("story")] + [dict(s, section="watch") for s in p.pop("watch")]
         flows = json.loads((FIX / "flows.json").read_text())
         triggers = json.loads((FIX / "triggers.json").read_text())
-        m = ra.Model(flows, triggers, ra.Settings(layout="graph", scope_all=True, today=date(2026, 11, 13)))
+        m = ra.Model(flows, triggers, ra.Settings(scope_all=True, today=date(2026, 11, 13)))
         v, _ = uc.validate(raw, uf.build_facts(m))
         tips = next(u for u in v["use_cases"] if u["id"] == "weekly-tips")
         self.assertEqual((len(tips["story"]), len(tips["how_it_works"]), len(tips["watch"])), (3, 1, 1))

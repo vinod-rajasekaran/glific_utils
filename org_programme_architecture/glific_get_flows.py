@@ -6,7 +6,7 @@ Usage (put the variables in the repo-root .env, see .env.example, or export them
   export GLIFIC_PHONE=91XXXXXXXXXX
   export GLIFIC_PASSWORD=secret
   python3 glific_get_flows.py --redact old/flows.json   # blank credentials in an earlier export
-  python3 glific_get_flows.py   # writes output/get_system_flow_architecture/<YYYY-MM-DD_HH-MM-SS>/flows.json
+  python3 glific_get_flows.py   # writes output/org_programme_architecture/<YYYY-MM-DD_HH-MM-SS>/flows.json
 """
 import json
 import os
@@ -22,7 +22,7 @@ PAGE_SIZE = 100
 
 # Each run writes to its own folder, output/<feature>/<YYYY-MM-DD_HH-MM-SS>/ at the repo root
 # (git-ignored), so earlier results are never overwritten.
-FEATURE = "get_system_flow_architecture"
+FEATURE = "org_programme_architecture"
 OUTPUT_ROOT = Path(__file__).resolve().parent.parent / "output" / FEATURE
 _run_dir = None
 

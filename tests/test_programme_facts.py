@@ -6,10 +6,10 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "get_system_flow_architecture"))
+sys.path.insert(0, str(ROOT / "org_programme_architecture"))
 
-import render_architecture as ra  # noqa: E402
-import usecase_facts as uf  # noqa: E402
+import render_graph as ra  # noqa: E402
+import programme_facts as uf  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 
@@ -17,7 +17,7 @@ FIX = ROOT / "tests" / "fixtures"
 def facts():
     flows = json.loads((FIX / "flows.json").read_text())
     triggers = json.loads((FIX / "triggers.json").read_text())
-    m = ra.Model(flows, triggers, ra.Settings(layout="graph", scope_all=True, today=date(2026, 11, 13)))
+    m = ra.Model(flows, triggers, ra.Settings(scope_all=True, today=date(2026, 11, 13)))
     return uf.build_facts(m)
 
 

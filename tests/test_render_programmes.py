@@ -9,12 +9,12 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "get_system_flow_architecture"))
+sys.path.insert(0, str(ROOT / "org_programme_architecture"))
 
-import render_architecture as ra  # noqa: E402
-import render_usecases as ru  # noqa: E402
-import usecase_claude as uc  # noqa: E402
-import usecase_facts as uf  # noqa: E402
+import render_graph as ra  # noqa: E402
+import render_programmes as ru  # noqa: E402
+import programme_claude as uc  # noqa: E402
+import programme_facts as uf  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 U = lambda n: f"00000000-0000-4000-8000-{n:012d}"  # noqa: E731
@@ -23,11 +23,11 @@ U = lambda n: f"00000000-0000-4000-8000-{n:012d}"  # noqa: E731
 def render():
     flows = json.loads((FIX / "flows.json").read_text())
     triggers = json.loads((FIX / "triggers.json").read_text())
-    st = ra.Settings(project="Demo bot", layout="graph", scope_all=True, today=date(2026, 11, 13))
+    st = ra.Settings(project="Demo bot", scope_all=True, today=date(2026, 11, 13))
     m = ra.Model(flows, triggers, st)
     facts = uf.build_facts(m)
     validated, problems = uc.validate(json.loads((FIX / "claude_output.json").read_text()), facts)
-    return ru.render_usecase_page(m, facts, validated, problems, st), validated
+    return ru.render_programme_page(m, facts, validated, problems, st), validated
 
 
 class RenderTest(unittest.TestCase):

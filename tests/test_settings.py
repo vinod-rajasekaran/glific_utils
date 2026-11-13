@@ -10,11 +10,11 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "get_system_flow_architecture"))
+sys.path.insert(0, str(ROOT / "org_programme_architecture"))
 
 import glific_get_settings as gs  # noqa: E402
-import render_architecture as ra  # noqa: E402
-import usecase_facts as uf  # noqa: E402
+import render_graph as ra  # noqa: E402
+import programme_facts as uf  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 U = lambda n: f"00000000-0000-4000-8000-{n:012d}"  # noqa: E731
@@ -27,7 +27,7 @@ SETTINGS = {"newcontactFlowId": "001", "optinFlowId": None,
 def model(org=SETTINGS, **kw):
     flows = json.loads((FIX / "flows.json").read_text())
     triggers = json.loads((FIX / "triggers.json").read_text())
-    st = ra.Settings(layout="graph", today=date(2026, 11, 13), **kw)
+    st = ra.Settings(today=date(2026, 11, 13), **kw)
     return ra.Model(flows, triggers, st, org=org)
 
 
@@ -62,7 +62,7 @@ class ModelTest(unittest.TestCase):
     def test_graph_page_shows_setting_box(self):
         flows = json.loads((FIX / "flows.json").read_text())
         triggers = json.loads((FIX / "triggers.json").read_text())
-        page, _ = ra.render_html(flows, triggers, ra.Settings(layout="graph", today=date(2026, 11, 13)), org=SETTINGS)
+        page, _ = ra.render_html(flows, triggers, ra.Settings(today=date(2026, 11, 13)), org=SETTINGS)
         self.assertIn("Glific setting", page)
         self.assertNotIn("No start found for Old draft", page)
 
@@ -88,7 +88,7 @@ class CliTest(unittest.TestCase):
         out = tempfile.mkdtemp()
         env = {k: v for k, v in os.environ.items() if not k.startswith(("GLIFIC_", "ANTHROPIC_"))}
         env.update(GLIFIC_OUTPUT_ROOT=out, GLIFIC_NO_DOTENV="1")
-        p = subprocess.run([sys.executable, str(ROOT / "get_system_flow_architecture" / "build_flow_architecture.py"),
+        p = subprocess.run([sys.executable, str(ROOT / "org_programme_architecture" / "build_org_map.py"),
                             "--from-json", str(src), "--date", "2026-11-13"], capture_output=True, text=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
         page = Path(p.stdout.split()[0])

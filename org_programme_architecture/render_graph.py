@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Render flows.json + triggers.json into one self-contained HTML flow map.
 
-Implements the spec in PROMPT_SPEC.md. In short:
+The graph page. In short:
   scope      flows carrying the tag, every flow they enter, and flows active triggers start
-  columns    When it starts (triggers) | Entry flows | Journey | Shared flows   (layout "columns")
-             or one lane per journey, with columns by step                     (layout "lanes")
+  graph      triggers, settings, keywords, groups and flows as boxes, laid out left to right
   wires      solid = enter_flow (counted), dashed = contact field written by 1-2 flows
              and read in another flow's router operand
   cards      Calls, Sends, Routes, Sets, Counts, Moves, Logs, Alerts, Labels, Ticket,
@@ -32,7 +31,6 @@ except ImportError:  # Python < 3.9
     ZoneInfo = None
 
 WEEKDAYS = {1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday"}
-MAP_CAP = 14          # flow cards on the map; the rest go to the strip
 GRAPH_CAP = 30        # flow boxes on the graph layout
 ROW_WORDS = 25        # word cap per card row
 GENERIC_RESULT = {"", "result", "webhook", "response", "results"}
@@ -49,7 +47,6 @@ class Settings:
     today: date = field(default_factory=date.today)
     footer: str = ""
     notes: str = ""                     # context notes text (see README for the format)
-    layout: str = "columns"             # "columns" (by role) or "lanes" (one lane per journey, columns by step)
     scope_all: bool = False             # every flow in the export, not just the tag and what it reaches
 
 
@@ -381,17 +378,12 @@ class Model:
         self._triggers()
         self._scope()
         self._links()
-        self._layout()
-        self.lanes = []
-        self.ncols = 4
+        self._roles()
         self.no_start = []
         self.setting_flows = []
         self.group_nodes = {}
         self.linked_group = set()
-        if st.layout == "lanes":
-            self._lanes()
-        elif st.layout == "graph":
-            self._graph_map()
+        self._graph_map()
 
     def name(self, u):
         return (self.flows.get(u) or {}).get("name") or u
@@ -481,69 +473,20 @@ class Model:
                 else:
                     self.shared_fields[f] = writers[f]
 
-    def _layout(self):
+    def _roles(self):
+        """The role of each flow in scope, for the intermediate table: entry, journey, shared or strip."""
         sc = self.scope
-
-        def starts_any(u):
-            return any(v in sc and v != u for v, _ in self.sum[u]["starts"])
-
-        shared = [u for u in sc if len(self.callers[u]) >= 2]
-        entry = [u for u in sc if not self.callers[u] and (self.active_trig.get(u) or (self.flows[u].get("keywords") and starts_any(u)))]
-        journey = [u for u in sc if len(self.callers[u]) == 1]
-        placed = set(shared) | set(entry) | set(journey)
-        strip = [u for u in sc if u not in placed]
-
-        def by_name(u):
-            return self.name(u).lower()
-
-        entry.sort(key=lambda u: (bool(self.active_trig.get(u)), by_name(u)))
-        priority = entry + sorted(shared, key=lambda u: (-sum(self.callers[u].values()), by_name(u))) + \
-            sorted(journey, key=lambda u: (-starts_any(u), by_name(u)))
-        on_map = set(priority[:MAP_CAP])
-        overflow = priority[MAP_CAP:]
-        if overflow:
-            self.findings.append(f"{plural(len(overflow), 'flow')} moved from the map to the strip to keep it readable: {join(map(self.name, overflow), 8)}.")
-
-        self.row, self.col = {}, {}
-        taken = defaultdict(set)
-
-        def place(u, col, want):
-            r = max(2, want)
-            while r in taken[col]:
-                r += 1
-            taken[col].add(r)
-            self.row[u], self.col[u] = r, col
-
-        entry_on = [u for u in entry if u in on_map]
-        for i, u in enumerate(entry_on):
-            place(u, 2, 2 + i)
-        queue, seen = list(entry_on), set(entry_on)
-        while queue:  # breadth first, so chains read left to right and top to bottom
-            u = queue.pop(0)
-            for v, _ in self.sum[u]["starts"]:
-                if v in on_map and v not in seen:
-                    seen.add(v)
-                    rows = [self.row[c] for c in self.callers[v] if c in self.row]
-                    place(v, 4 if v in shared else 3, min(rows) if rows else 2)
-                    queue.append(v)
-        for u in sorted(on_map - set(self.row), key=by_name):   # reached only from flows off the map
-            place(u, 4 if u in shared else 3, 2)
-
-        # Trigger cards sit in column 1, in the row of their flow (or the next free row)
-        self.trig_row = {}
-        self.trigger_flows = entry_on + sorted((u for u in on_map if u not in entry_on and self.active_trig.get(u)),
-                                               key=lambda u: self.row[u])
-        for u in self.trigger_flows:
-            r = self.row[u]
-            while r in taken[1]:
-                r += 1
-            taken[1].add(r)
-            self.trig_row[u] = r
-
-        self.on_map = on_map
-        self.entry = entry_on
-        self.strip = sorted(strip, key=by_name) + overflow
-        self.columns = {u: ("entry" if u in entry else "shared" if u in shared else "journey" if u in journey else "strip") for u in sc}
+        starts_any = lambda u: any(v in sc and v != u for v, _ in self.sum[u]["starts"])
+        self.columns = {}
+        for u in sc:
+            if len(self.callers[u]) >= 2:
+                self.columns[u] = "shared"
+            elif len(self.callers[u]) == 1:
+                self.columns[u] = "journey"
+            elif self.active_trig.get(u) or (self.flows[u].get("keywords") and starts_any(u)):
+                self.columns[u] = "entry"
+            else:
+                self.columns[u] = "strip"
 
     def _graph_map(self):
         """The graph has room for more than the card grid: every flow in scope that starts, is
@@ -613,131 +556,6 @@ class Model:
         self.no_start = sorted((u for u in on if not self.callers[u] and u not in self.trigger_flows
                                 and u not in self.setting_starts), key=by_name)
         self.entry = [u for u in self.trigger_flows if u not in called]
-
-    def _lanes(self):
-        """Regroup the cards on the map into one horizontal lane per journey.
-
-        A journey is the set of flows reachable from a group of entry flows, through starts
-        and data links. Entry flows that reach the same flow share a lane, unless that flow
-        starts nothing else and is reached from more than one lane: such flows go to a lane of
-        shared flows at the bottom. Columns are steps: entry flows first, then each flow in the
-        column after the longest chain of starts that leads to it.
-        """
-        on = self.on_map
-        kids = {u: list(dict.fromkeys(v for v, _ in self.sum[u]["starts"] if v in on and v != u)) for u in on}
-        feeds = defaultdict(set)
-        for a, b, _ in self.data_links:
-            if a in on and b in on and a != b:
-                feeds[a].add(b)
-        by_name = lambda u: self.name(u).lower()
-        roots = list(self.entry) + sorted((u for u in on if u not in self.entry and not any(c in on for c in self.callers[u])),
-                                          key=by_name)
-        rootset = set(roots)
-
-        depth = {u: 0 for u in roots}
-        for _ in range(len(on)):   # longest chain of starts; the bound also stops on a loop
-            changed = False
-            for u in list(depth):
-                for v in kids[u]:
-                    if v not in rootset and depth.get(v, -1) < depth[u] + 1 <= len(on):
-                        depth[v] = depth[u] + 1
-                        changed = True
-            if not changed:
-                break
-        for u in on:
-            depth.setdefault(u, 0)
-
-        owners = defaultdict(set)
-        for r in roots:
-            seen, stack = set(), [r]
-            while stack:
-                u = stack.pop()
-                if u in seen:
-                    continue
-                seen.add(u)
-                owners[u].add(r)
-                stack += kids[u] + sorted(feeds[u])
-
-        parent = {r: r for r in roots}
-        def find(r):
-            while parent[r] != r:
-                parent[r] = parent[parent[r]]
-                r = parent[r]
-            return r
-        leaf_shared = {v for v in on if v not in rootset and not kids[v] and len(owners[v]) >= 2}
-        for v in on:
-            if v not in leaf_shared and len(owners[v]) >= 2:
-                first, *rest = sorted(owners[v])
-                for r in rest:
-                    parent[find(r)] = find(first)
-        lane_of, services = {}, []
-        for v in sorted(on, key=by_name):
-            gs = {find(r) for r in owners[v]}
-            if len(gs) == 1:
-                lane_of[v] = gs.pop()
-            else:
-                services.append(v)
-
-        groups = defaultdict(list)
-        for v, g in lane_of.items():
-            groups[g].append(v)
-        lone = [ms[0] for ms in groups.values() if len(ms) == 1]
-        lanes = sorted((ms for ms in groups.values() if len(ms) > 1), key=lambda ms: (-len(ms), min(map(by_name, ms))))
-
-        self.row, self.col, self.trig_row = {}, {}, {}
-        self.lanes = []
-        self.ncols = 2 + max(depth.values(), default=0)
-        next_row = 2
-        trig = set(self.trigger_flows)
-
-        def lay(title, note, members, chain):
-            nonlocal next_row
-            top = next_row + 1              # the lane heading takes one row
-            taken = defaultdict(set)
-            def place(u, col, want):
-                r = max(top, want)
-                while r in taken[col]:
-                    r += 1
-                taken[col].add(r)
-                self.row[u], self.col[u] = r, col
-            ms = set(members)
-            if chain:
-                in_lane = [u for u in roots if u in ms]
-                # a flow that hands data to another entry flow goes above it
-                lane_roots = sorted(in_lane, key=lambda u: (-len(feeds[u] & set(in_lane)), in_lane.index(u)))
-                for u in lane_roots:
-                    place(u, 2, top)
-                queue = list(lane_roots)
-                while queue:
-                    u = queue.pop(0)
-                    for v in kids[u]:
-                        if v in ms and v not in self.row:
-                            rows = [self.row[c] for c in self.callers[v] if c in self.row and c in ms]
-                            place(v, 2 + depth[v], min(rows) if rows else top)
-                            queue.append(v)
-                for u in sorted(ms - set(self.row), key=by_name):
-                    place(u, 2 + depth[u], top)
-            else:
-                for u in sorted(members, key=lambda u: (depth[u], by_name(u))):
-                    place(u, 2 + depth[u], top)
-            for u in sorted((u for u in members if u in trig), key=lambda u: self.row[u]):
-                r = self.row[u]
-                while r in taken[1]:
-                    r += 1
-                taken[1].add(r)
-                self.trig_row[u] = r
-            end = max((max(rs) for rs in taken.values() if rs), default=top)
-            self.lanes.append((next_row, title, note, members))
-            next_row = end + 1
-
-        for ms in lanes:
-            starts = [u for u in roots if u in ms]
-            title = "Journey from " + join([self.name(u) for u in starts], 3)
-            lay(title, f"{plural(len(ms), 'flow')} that start one another or hand over data.", ms, True)
-        if services:
-            lay("Shared flows", "Entered from more than one journey above, so the wires reach up to them.", services, False)
-        if lone:
-            lay("Flows that run alone", "Started by a trigger or keyword, and start no other flow on the map.", lone, False)
 
     def edges(self):
         out = []
@@ -927,9 +745,9 @@ def tag_pill(m, u):
     return '<span class="tag no">No tag</span>'
 
 
-def flow_card(m, u, placed=True):
+def flow_card(m, u):
     cls = "card" if m.tagged(u) else "card untagged"
-    attrs = f'data-id="f-{esc(u)}" tabindex="0" style="--r:{m.row[u]};--c:{m.col[u]}"' if placed else "data-static"
+    attrs = "data-static"
     return (f'<article class="{cls}" {attrs}><div class="ch"><h3>{esc(m.name(u))}</h3>{tag_pill(m, u)}</div>'
             f'{flow_rows(m, u)}</article>')
 
@@ -946,14 +764,14 @@ def trigger_card(m, u, findings):
         body += row("Keyword", f"Also starts when a contact sends {join(kw, 20, 'or')}")
     if m.earlier_trig.get(u):
         body += f'<details><summary>Earlier runs</summary><p>{esc(typo(earlier_runs(m.earlier_trig[u], m.tz)))}</p></details>'
-    return (f'<article class="card trigger" data-id="t-{esc(u)}" tabindex="0" style="--r:{m.trig_row.get(u, 2)};--c:1">'
+    return (f'<article class="card trigger" data-static>'
             f'<div class="ch"><h3>{esc(schedule_title(ts))}</h3><span class="pill">Active</span></div>{body}</article>')
 
 
 def keyword_card(m, u):
     kw = m.flows[u].get("keywords") or []
     runs = f"When a contact sends {join(kw, 30, 'or')}"
-    return (f'<article class="card trigger" data-id="k-{esc(u)}" tabindex="0" style="--r:{m.trig_row.get(u, 2)};--c:1">'
+    return (f'<article class="card trigger" data-static>'
             f'<div class="ch"><h3>Keyword message</h3><span class="pill">Active</span></div>'
             f'{row("Runs", runs)}{row("Starts", m.name(u))}</article>')
 
@@ -989,13 +807,13 @@ def shared_resources(m):
 
 
 def strip_section(m):
-    cards = [flow_card(m, u, placed=False) for u in m.strip]
+    cards = [flow_card(m, u) for u in m.strip]
     # untagged flows outside scope that change groups the scope uses
     scope_groups = {g for u in m.scope for _, gs, _ in m.sum[u]["moves"] for g in gs}
     scope_groups |= {g for u in m.scope for t in m.active_trig.get(u, []) + m.earlier_trig.get(u, []) for g in names(t.get("groups"))}
     matter = [u for u in m.flows if u not in m.scope and not m.tagged(u)
               and any(set(gs) & scope_groups for _, gs, _ in m.sum[u]["moves"])]
-    cards += [flow_card(m, u, placed=False) for u in sorted(matter, key=m.name)[:8]]
+    cards += [flow_card(m, u) for u in sorted(matter, key=m.name)[:8]]
     rows_ = []
     if m.missing_trig:
         items = []
@@ -1331,7 +1149,7 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
             chips = node_chips(m, u)
             spans = '<tspan class="sep"> \u00b7 </tspan>'.join(f'<tspan class="{c}">{esc(t)}</tspan>' for t, c in chips)
             txt += f'<text class="nmeta" x="{x + 12:.1f}" y="{y + h - 11:.1f}">{spans}</text>'
-            card = flow_card(m, u, placed=False)
+            card = flow_card(m, u)
             label = m.name(u)
         elif n.startswith("g-"):
             gname, info = groups[int(u)]
@@ -1412,37 +1230,9 @@ def render_html(flows, triggers, settings=None, out=None, org=None):
     findings = m.findings
     edges = m.edges()
 
-    tcard = lambda u: trigger_card(m, u, findings) if m.active_trig.get(u) else keyword_card(m, u)
-    if m.lanes:
-        cards = []
-        for r, title, note, members in m.lanes:   # lane by lane, so narrow screens read one journey at a time
-            cards.append(f'<div class="lane" style="--r:{r};--c:1/-1"><h3>{esc(typo(title))}</h3><p>{esc(typo(note))}</p></div>')
-            for u in sorted(members, key=lambda u: (m.row[u], m.col[u])):
-                if u in m.trig_row:
-                    cards.append(tcard(u))
-                cards.append(flow_card(m, u))
-        heads = [("When it starts", "Active triggers and keywords"), ("Entry flows", "Where a contact or a schedule enters")]
-        steps = ["Second step", "Third step", "Fourth step", "Fifth step", "Sixth step"]
-        heads += [(steps[i] if i < len(steps) else f"Step {i + 2}", "Started by a flow to the left, after the longest chain")
-                  for i in range(m.ncols - 2)]
-    elif st.layout == "graph":
-        cards, heads = [], []      # the graph draws its own boxes
-    else:
-        cards = [tcard(u) for u in m.trigger_flows]
-        cards += [flow_card(m, u) for u in sorted(m.on_map, key=lambda u: (m.col[u], m.row[u]))]
-        cols_used = {m.col[u] for u in m.on_map}
-        cards += [f'<p class="empty" style="--r:2;--c:{c}">None</p>' for c in (3, 4) if c not in cols_used]
-        heads = [("When it starts", "Active triggers and keywords"), ("Entry flows", "Where a contact or a schedule enters"),
-                 ("Journey", "Flows that one other flow enters"), ("Shared flows", "Entered by two or more flows")]
-    colheads = "".join(f'<div class="colhead" style="--r:1;--c:{i}"><h2>{esc(h)}</h2><p>{esc(d)}</p></div>'
-                       for i, (h, d) in enumerate(heads, 1))
     edges_js = json.dumps(edges).replace("</", "<\\/")
-    if st.layout == "graph":
-        map_html, script = graph_section(m, edges, findings)
-        script = Template(script).substitute(edges=edges_js)
-    else:
-        map_html = Template(GRID_HTML).substitute(colheads=colheads, ncols=len(heads), cards="".join(cards))
-        script = Template(GRID_JS).substitute(edges=edges_js)
+    map_html, script = graph_section(m, edges, findings)
+    script = Template(script).substitute(edges=edges_js)
 
     for u in sorted(m.scope, key=m.name):
         if m.sum[u]["lost"]:
@@ -1461,7 +1251,7 @@ def render_html(flows, triggers, settings=None, out=None, org=None):
     start_from = f", starting from the {plural(tagged_n, 'flow')} tagged {st.tag}" if st.tag else ", starting from triggers and keywords"
     lede = (f"This page maps {plural(len(m.scope), 'flow')} of the {plural(len(m.flows), 'flow')} in the export{start_from}. "
             f"{plural(active_n, 'trigger')} {'is' if active_n == 1 else 'are'} active on {fmt_day(datetime.combine(st.today, datetime.min.time()))}. "
-            f"Times are in {m.tz_label}, with UTC in brackets. " + ("Select a box in the graph to read what that flow does." if st.layout == "graph" else "Hover over or tab to a card to see what it connects to."))
+            f"Times are in {m.tz_label}, with UTC in brackets. Select a box in the graph to read what that flow does.")
     footer = " ".join(x for x in [st.footer.strip(), "Generated from flows.json and triggers.json by glific_utils."] if x)
     page = Template(PAGE).substitute(
         title=esc(f"{st.project} flow map"),
@@ -1471,7 +1261,7 @@ def render_html(flows, triggers, settings=None, out=None, org=None):
         untag_legend='<span><i class="sw u"></i>Flow without that tag</span>' if st.tag else "",
         map=map_html,
         legend_extra=('\n  <span><i class="sw s"></i>Glific setting</span><span><i class="sw g"></i>Contact group</span><span><i class="ln g"></i>Adds to or removes from a group</span>'
-                      '\n  <span><i class="sw s"></i>No start found in the export</span>') if st.layout == "graph" else "",
+                      '\n  <span><i class="sw s"></i>No start found in the export</span>'),
         script=script,
         notes=shared_resources(m),
         context=context_section(st.notes),
@@ -1542,13 +1332,6 @@ h3{font-family:var(--head);font-weight:700;font-size:19px;line-height:1.25;margi
 .wire.data{stroke-dasharray:6 5}
 .wire.dim{opacity:.12}
 .wire.hot{stroke:var(--flow);stroke-width:2.6}
-.grid{position:relative;z-index:1;display:grid;grid-template-columns:1fr;gap:18px}
-.colhead{padding-bottom:6px;border-bottom:2px solid var(--ink);margin-top:14px}
-.colhead p{margin:4px 0 0;font-size:13px;color:var(--muted);line-height:1.4}
-.empty{color:var(--muted);font-size:14px;margin:0}
-.lane{grid-column:1/-1;margin-top:22px;padding:10px 14px;border-left:4px solid var(--flow);background:var(--soft);border-radius:0 8px 8px 0}
-.lane h3{font-size:19px}
-.lane p{margin:2px 0 0;font-size:13px;color:var(--muted);line-height:1.4}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;transition:opacity .15s,box-shadow .15s}
 .card:focus-visible{outline:3px solid var(--flow);outline-offset:2px}
 .card.dim{opacity:.4}
@@ -1632,14 +1415,9 @@ details p{margin:6px 0 0}
 .panel .card{clear:both}
 footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
 @media (min-width:1100px){
-  .grid{grid-template-columns:repeat(var(--cols,4),minmax(0,1fr));column-gap:58px;row-gap:20px;align-items:start}
-  .grid>*{grid-row:var(--r);grid-column:var(--c)}
-  .colhead{margin-top:0}
   .strip{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 @media (min-width:700px) and (max-width:1099px){
-  .grid{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:20px;align-items:start}
-  .colhead{grid-column:1/-1}
   .strip{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 </style>
@@ -1673,79 +1451,6 @@ $script
 </body>
 </html>
 """
-
-GRID_HTML = """<div class="canvas" id="canvas">
-<svg id="wires" aria-hidden="true">
-  <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-</svg>
-<div class="grid" style="--cols:$ncols">
-  $colheads
-  $cards
-</div>
-</div>
-"""
-
-GRID_JS = """<script>
-(function(){
-  var edges=$edges;
-  var canvas=document.getElementById('canvas'),svg=document.getElementById('wires'),NS='http://www.w3.org/2000/svg';
-  var cards={};
-  canvas.querySelectorAll('.card[data-id]').forEach(function(c){cards[c.getAttribute('data-id')]=c;});
-  function pos(n){var r=n.getBoundingClientRect(),c=canvas.getBoundingClientRect();return{l:r.left-c.left,r:r.right-c.left,t:r.top-c.top,b:r.bottom-c.top,cx:(r.left+r.right)/2-c.left};}
-  function draw(){
-    Array.prototype.slice.call(svg.querySelectorAll('.wire')).forEach(function(n){n.remove();});
-    if(window.innerWidth<1100){return;}
-    var out={},inn={};
-    edges.forEach(function(e){if(!cards[e[0]]||!cards[e[1]])return;(out[e[0]]=out[e[0]]||[]).push(e);(inn[e[1]]=inn[e[1]]||[]).push(e);});
-    Object.keys(out).forEach(function(k){out[k].sort(function(a,b){return pos(cards[a[1]]).t-pos(cards[b[1]]).t;});});
-    Object.keys(inn).forEach(function(k){inn[k].sort(function(a,b){return pos(cards[a[0]]).t-pos(cards[b[0]]).t;});});
-    edges.forEach(function(e){
-      var A=cards[e[0]],B=cards[e[1]];if(!A||!B)return;
-      var P=pos(A),Q=pos(B),d;
-      if(Math.abs(P.cx-Q.cx)<40){
-        var down=Q.t>P.t,k=out[e[0]].indexOf(e),x=P.cx+(k-(out[e[0]].length-1)/2)*14;
-        d='M'+x+' '+(down?P.b:P.t)+' L'+x+' '+(down?Q.t-3:Q.b+3);
-      }else{
-        var fwd=Q.l>P.r,i=out[e[0]].indexOf(e),j=inn[e[1]].indexOf(e);
-        var y1=P.t+32+Math.min(i,10)*14,y2=Q.t+32+Math.min(j,10)*14;
-        var x1=fwd?P.r:P.l,x2=fwd?Q.l-3:Q.r+3,dx=(x2-x1)*0.5;
-        d='M'+x1+' '+y1+' C'+(x1+dx)+' '+y1+' '+(x2-dx)+' '+y2+' '+x2+' '+y2;
-      }
-      var p=document.createElementNS(NS,'path');
-      p.setAttribute('d',d);p.setAttribute('class','wire'+(e[2]==='d'?' data':''));
-      p.setAttribute('marker-end','url(#ah)');p.setAttribute('data-from',e[0]);p.setAttribute('data-to',e[1]);
-      svg.appendChild(p);
-    });
-  }
-  function focusOn(id){
-    var near={};near[id]=1;
-    edges.forEach(function(e){if(e[0]===id)near[e[1]]=1;if(e[1]===id)near[e[0]]=1;});
-    Object.keys(cards).forEach(function(k){cards[k].classList.toggle('dim',!near[k]);cards[k].classList.toggle('on',k===id);});
-    svg.querySelectorAll('.wire').forEach(function(w){
-      var hot=w.getAttribute('data-from')===id||w.getAttribute('data-to')===id;
-      w.classList.toggle('hot',hot);w.classList.toggle('dim',!hot);
-    });
-  }
-  function clear(){
-    Object.keys(cards).forEach(function(k){cards[k].classList.remove('dim','on');});
-    svg.querySelectorAll('.wire').forEach(function(w){w.classList.remove('hot','dim');});
-  }
-  Object.keys(cards).forEach(function(id){
-    var c=cards[id];
-    c.addEventListener('mouseenter',function(){focusOn(id);});
-    c.addEventListener('mouseleave',clear);
-    c.addEventListener('focus',function(){focusOn(id);});
-    c.addEventListener('blur',clear);
-  });
-  if(window.ResizeObserver){new ResizeObserver(draw).observe(canvas);}
-  window.addEventListener('resize',draw);
-  window.addEventListener('load',draw);
-  document.addEventListener('visibilitychange',function(){if(!document.hidden){draw();}});
-  if(document.fonts&&document.fonts.ready){document.fonts.ready.then(draw);}
-  canvas.addEventListener('toggle',draw,true);
-  draw();
-})();
-</script>"""
 
 GRAPH_JS = """<script>
 (function(){
