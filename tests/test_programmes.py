@@ -95,9 +95,9 @@ class RenderTest(unittest.TestCase):
         self.assertIn('class="pstripe p2"', view)
 
     def test_full_graph_is_a_view(self):
-        self.assertIn('href="#uc-graph"', self.home)
-        view = self.page[self.page.index('id="uc-graph"'):]
-        self.assertIn('id="all-graph"', view[:view.index("</section>")])
+        self.assertIn('href="#uc--graph"', self.home)
+        view = self.page[self.page.index('id="uc--graph"'):]
+        self.assertIn('id="-graph-graph"', view[:view.index("</section>")])
 
     def test_pane_has_part_sections(self):
         view = self.page[self.page.index('id="uc-healthy-families"'):]

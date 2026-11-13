@@ -132,7 +132,7 @@ def programme_step(args, flows, triggers, out_dir, org, graph_model):
 
 def _programme_step(args, flows, triggers, out_dir, org, graph_model):
     st = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
-                  scope_all=True)
+                  notes=args.notes.read_text() if args.notes else "", scope_all=True)
     m = Model(flows, triggers, st, org=org)
     facts = build_facts(m)
     save_json({"model": MODEL, "system": PROMPT_PATH.read_text(encoding="utf-8"), "facts": facts}, "claude_input.json", out_dir)

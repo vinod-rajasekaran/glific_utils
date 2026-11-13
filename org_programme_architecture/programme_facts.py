@@ -236,7 +236,9 @@ def build_facts(m):
                         rec["checked_by"].append(u)
             for a in n.get("actions") or []:
                 if a.get("type") == "call_webhook" and "://" in str(a.get("url") or ""):
-                    hosts.add(urlsplit(str(a["url"]).strip()).hostname or "")
+                    host = _host(str(a["url"]).strip())
+                    if host != "[link]":
+                        hosts.add(host)
 
         route = []
         if s["waits"]:

@@ -33,7 +33,7 @@ class BuildCliTest(unittest.TestCase):
         self.assertEqual(names, ["claude_input.json", "claude_output.json", "flows.json", "org_map.html", "triggers.json"])
         page = Path(pages[0]).read_text()
         self.assertIn('id="uc-weekly-tips"', page)
-        self.assertIn('id="uc-graph"', page)
+        self.assertIn('id="uc--graph"', page)
 
     def test_no_sdk_falls_back(self):
         block = tempfile.mkdtemp()

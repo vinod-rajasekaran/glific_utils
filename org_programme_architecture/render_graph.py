@@ -171,9 +171,13 @@ def fmt_day(dt):
 
 def webhook_desc(action):
     url = str(action.get("url") or "").strip()
-    if "://" in url:
-        parts = urlsplit(url)
-        what = (parts.hostname or "unknown host") + (f":{parts.port}" if parts.port else "")
+    try:
+        parts = urlsplit(url) if "://" in url else None
+        port = parts.port if parts else None
+    except ValueError:   # a malformed URL (an unclosed [ for example) must not stop the run
+        return "an unreadable webhook address"
+    if parts:
+        what = (parts.hostname or "unknown host") + (f":{port}" if port else "")
         tail = [p for p in parts.path.split("/") if p]
         # Show the last path segment only when it is a plain word, never a token-like string
         if tail and re.fullmatch(r"[A-Za-z][A-Za-z_-]{0,24}", tail[-1]):
@@ -512,11 +516,12 @@ class Model:
         self.graph_view(on, add_fillers=True)
         self.strip = [u for u in self.strip if u not in self.on_map]
 
-    def graph_view(self, flow_ids, add_fillers=False, no_starts=frozenset()):
+    def graph_view(self, flow_ids, add_fillers=False, no_starts=frozenset(), ignore_callers=frozenset()):
         """Put exactly these flows on the graph and work out their trigger, keyword, no-start and
         group boxes. With add_fillers, flows outside the set that add contacts to a group a
         schedule on the graph sends to are added too. Flows in no_starts (faded neighbours) get
-        no start boxes and do not pull their schedules' groups onto the graph."""
+        no start boxes and do not pull their schedules' groups onto the graph. Callers in
+        ignore_callers (test flows left off the graph) do not count as a way the flow starts."""
         on = set(flow_ids)
         by_name = lambda u: self.name(u).lower()
         self.on_map = on
@@ -555,7 +560,7 @@ class Model:
         # Flows that Glific's organisation settings start get a "Glific setting" box
         self.setting_flows = sorted((u for u in own if u in self.setting_starts), key=by_name)
         # "No start found" only when nothing in scope starts the flow, not just nothing on this graph
-        self.no_start = sorted((u for u in own if not self.callers[u] and u not in self.trigger_flows
+        self.no_start = sorted((u for u in own if not (set(self.callers[u]) - set(ignore_callers)) and u not in self.trigger_flows
                                 and u not in self.setting_starts), key=by_name)
         self.entry = [u for u in self.trigger_flows if u not in called]
 
@@ -1186,6 +1191,16 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
                     + row("Note", "Set in Glific under Settings, not by a trigger or keyword, so it does not appear in the trigger list.")
                     + "</article>")
             label = f"Glific setting that starts {m.name(u)}"
+        elif n.startswith("x-") and m.callers[u]:   # started only by flows left off this graph (test flows)
+            cls = "node nostart"
+            txt = (f'<text class="tname" x="{x + 12:.1f}" y="{y + 21:.1f}">Only test flows start it</text>'
+                   f'<text class="tmeta" x="{x + 12:.1f}" y="{y + 40:.1f}">They are left off this graph</text>')
+            card = ('<article class="card untagged" data-static><div class="ch"><h3>Only test flows start it</h3></div>'
+                    + row("Starts", m.name(u))
+                    + row("Started by", join(sorted(map(m.name, m.callers[u])), 4))
+                    + row("Note", "The only flows that start this one were left off this graph as tests or leftovers.")
+                    + "</article>")
+            label = f"Only test flows start {m.name(u)}"
         elif n.startswith("x-"):
             cls = "node nostart"
             txt = (f'<text class="tname" x="{x + 12:.1f}" y="{y + 21:.1f}">No start found</text>'

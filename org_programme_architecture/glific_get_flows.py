@@ -54,7 +54,8 @@ def load_env(path=Path(__file__).resolve().parent.parent / ".env"):
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]  # drop one pair of matching surrounding quotes only
-        os.environ.setdefault(key, value)
+        if value:   # an empty line in .env must not mask credentials set elsewhere
+            os.environ.setdefault(key, value)
 
 
 load_env()

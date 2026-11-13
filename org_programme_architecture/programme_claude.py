@@ -146,6 +146,7 @@ def validate(out, facts):
         return kept
 
     owner, use_cases, taken = {}, [], set()
+    slug_of = {}      # Claude's use-case id -> the slug it is shown under, so programme parts can follow it
     for u in out["use_cases"]:
         if not isinstance(u, dict):
             continue
@@ -156,12 +157,16 @@ def validate(out, facts):
                 problems.append(f"use case {name}: unknown flow ID {fid}")
             elif fid in owner:
                 problems.append(f"use case {name}: {names[fid]} is already in use case {owner[fid]}; a flow has one primary use case")
+            elif fid in flows:
+                problems.append(f"use case {name}: {names[fid]} is listed twice")
             else:
                 flows.append(fid)
         if not flows:
             problems.append(f"use case {name} was dropped because none of its flows are in the facts")
             continue
         uid = _slug(u.get("id") or name, taken)
+        slug_of.setdefault(str(u.get("id") or name), uid)
+        slug_of.setdefault(uid, uid)
         for fid in flows:
             owner[fid] = name
         use_cases.append({
@@ -225,13 +230,13 @@ def validate(out, facts):
     org_summary = {"text": str(summary.get("text") or ""), "evidence": ev,
                    "confidence": (summary.get("confidence") if summary.get("confidence") in CONFIDENCE else "guess") if ev else "guess"}
 
-    programmes = _programmes(out, use_cases, statements, problems)
+    programmes = _programmes(out, use_cases, statements, problems, slug_of)
 
     return ({"org_summary": org_summary, "programmes": programmes, "use_cases": use_cases, "flows": flows,
              "not_placed": not_placed, "edges": edges, "systems": systems}, problems)
 
 
-def _programmes(out, use_cases, statements, problems):
+def _programmes(out, use_cases, statements, problems, slug_of=None):
     """Group the validated use cases into programmes. An answer without programmes (from before
     they existed) gets one programme per use case; a use case left out of every programme gets
     its own, and that is reported."""
@@ -246,6 +251,7 @@ def _programmes(out, use_cases, statements, problems):
         name = str(p.get("name") or "Unnamed programme")
         parts = []
         for pid in p.get("parts", []) if isinstance(p.get("parts"), list) else []:
+            pid = (slug_of or {}).get(str(pid), pid)
             if pid not in by_id:
                 problems.append(f"programme {name}: unknown use case ID {pid}")
             elif pid in owner:
@@ -277,19 +283,28 @@ def _wrap(u, taken=()):
             "story": [], "watch": [], "confidence": u["confidence"]}
 
 
-def run_programmes(facts, client=None):
-    """Call Claude, validate, and repair once if needed. Returns (raw answer, validated, notes on what was dropped).
+COSMETIC = ("flows: no purpose given", "flows: the purpose of", "org summary: cites no evidence")
 
-    If the repair call fails or its answer is unusable, the first answer is kept (with its problems
-    listed), so a paid-for usable answer is never thrown away."""
+
+def _serious(problems):
+    """Problems worth a second (paid) call: anything but a missing purpose or a claim shown as a guess."""
+    return [p for p in problems if not p.startswith(COSMETIC)]
+
+
+def run_programmes(facts, client=None):
+    """Call Claude, validate, and repair once if the answer has problems that matter.
+    Returns (raw answer, validated, notes on what was dropped).
+
+    Whichever answer places more flows (then has fewer problems) is kept, and if the repair call fails the first answer
+    is kept, so a paid-for usable answer is never thrown away."""
     client = client or _client()
     raw = call_claude(facts, client)
     try:
         validated, problems = validate(raw, facts)
     except ProgrammeError as e:
         problems, validated = [str(e)], None
-    if not problems:
-        return raw, validated, []
+    if not _serious(problems):
+        return raw, validated, problems
     try:
         raw2 = call_claude(facts, client, repair_errors=problems, previous=raw)
         validated2, problems2 = validate(raw2, facts)
@@ -297,4 +312,8 @@ def run_programmes(facts, client=None):
         if validated is None:
             raise
         return raw, validated, problems + [f"The repair call failed ({e}), so Claude's first answer is shown."]
+    def score(v, probs):   # more flows placed first, then fewer problems that matter
+        return (sum(len(u["flows"]) for u in v["use_cases"]), -len(_serious(probs)))
+    if validated is not None and score(validated, problems) > score(validated2, problems2):
+        return raw, validated, problems + ["The repair answer had more problems, so Claude's first answer is shown."]
     return raw2, validated2, problems2
