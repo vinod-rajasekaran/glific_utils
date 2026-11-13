@@ -6,6 +6,7 @@ Extracts every flow and trigger from a Glific instance, so you can map how the c
 |---|---|---|
 | [`build_flow_architecture.py`](build_flow_architecture.py) | **Runs everything:** pulls flows and triggers, then builds the HTML map | all three files below |
 | [`glific_get_flows.py`](glific_get_flows.py) | Every **active** flow, with its full definition (nodes and edges) | `flows.json` |
+| [`glific_get_settings.py`](glific_get_settings.py) | The **organisation settings** that start flows: default, new contact, opt-in, out-of-office and regex flows | `settings.json` |
 | [`glific_get_triggers.py`](glific_get_triggers.py) | Every **trigger** (scheduled flow starts), active and inactive | `triggers.json` |
 | [`graph_layout.py`](graph_layout.py) | Layered left-to-right layout for `--layout graph` (no dependencies) | |
 | [`render_architecture.py`](render_architecture.py) | Turns the two JSON files into `flow_architecture.html` (no API calls) | `flow_architecture.html` |
@@ -76,7 +77,7 @@ Keep all the scripts in this folder: they import from each other.
 
 ## Use-case page (`flow_usecases.html`)
 
-With `--usecases`, the run also asks Claude to read every active flow and work out the org's use cases. The page opens on a list of use cases, each with a short summary and pills (number of flows, how they start, outside systems, groups, things to check). Selecting one shows a graph of its flows beside a side pane with the story from the contact's side, how it works and what to watch. Selecting a box shows that flow's purpose, how it starts, where it leads, and its full card. Flows from other use cases that connect to this one appear faded; selecting one jumps to its use case.
+With `--usecases`, the run also asks Claude to read every active flow and work out what the org's bot does, in two levels: a few programmes (for example a maternal and child health pilot), each made of parts (registration, data sync, weekly nudges, question answering). The page opens on one card per programme, with its parts and pills (number of flows, how they start, outside systems, groups, concerns). Selecting one shows a graph of all its flows, each box striped in the colour of its part, beside a side pane with the programme's story end to end and a section per part. Selecting a box shows that flow's purpose, how it starts, where it leads, and its full card. Flows from other use cases that connect to this one appear faded; selecting one jumps to its use case.
 
 **What Claude decides, and what it does not.** Claude groups the flows, names the use cases, gives each flow a purpose and role (core, helper, shared, test, leftover) and writes the story and the concerns. Every number, schedule, group, link and arrow on the page comes from the export, not from Claude. Claude may refer to flows, groups, triggers, links and message excerpts only by the IDs in the facts, and must cite them as evidence with a confidence level (clear, likely, a guess). Python checks every reference: anything that does not match is removed, Claude gets one chance to fix its answer, and whatever is still wrong is listed under "Dropped by validation". Selecting a confidence badge shows the evidence behind a statement.
 

@@ -1229,9 +1229,10 @@ def graph_section(m, edges, findings):
     return html_, GRAPH_JS
 
 
-def graph_svg(m, edges, findings, ns="", faded=frozenset()):
+def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
     """The graph as an SVG string plus one <template> per box holding its full card. Every id in
-    both is prefixed with ns, so several graphs can share a page. Flows in faded are drawn faded."""
+    both is prefixed with ns, so several graphs can share a page. Flows in faded are drawn faded.
+    part_of maps a flow uuid to a part number (1 to 6); the box gets a coloured stripe for its part."""
     sizes, kinds = {}, {}
     def size(n):
         if n[0] in "tkxs":
@@ -1385,8 +1386,11 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset()):
             label = f"Trigger for {m.name(u)}"
         if n.startswith("f-") and u in faded:
             cls += " faded"
+        stripe = ""
+        if n.startswith("f-") and u in (part_of or {}):
+            stripe = f'<rect class="pstripe p{part_of[u]}" x="{x + 3:.1f}" y="{y + 8:.1f}" width="5" height="{h - 16}" rx="2.5"/>'
         parts.append(f'<g class="{cls}" data-id="{esc(ns + n)}" tabindex="0" role="button" aria-label="{esc(label)}">'
-                     f'<rect x="{x:.1f}" y="{y:.1f}" width="{w}" height="{h}" rx="10"/>{txt}</g>')
+                     f'<rect x="{x:.1f}" y="{y:.1f}" width="{w}" height="{h}" rx="10"/>{stripe}{txt}</g>')
         card = re.sub(r' data-id="[^"]*"', "", card)   # the box carries the id; the card copy must not
         tpls.append(f'<template id="tpl-{esc(ns + n)}">{card}</template>')
 
@@ -1599,6 +1603,7 @@ details p{margin:6px 0 0}
 .fgraph .node rect{fill:var(--flow-bg);stroke:var(--flow);stroke-width:1.3}
 .fgraph .node.untagged rect{fill:var(--surface);stroke:var(--muted);stroke-dasharray:5 4}
 .fgraph .node.trig rect{fill:var(--trig-bg);stroke:var(--trig)}
+.fgraph .pstripe{stroke:none}
 .fgraph .node.setting rect{fill:var(--slate-bg);stroke:var(--slate)}
 .fgraph .node.nostart rect{fill:var(--slate-bg);stroke:var(--slate);stroke-dasharray:3 3}
 .fgraph .node.grp rect{fill:var(--chat-bg);stroke:var(--chat);rx:26}

@@ -43,6 +43,11 @@ SCHEMA = _obj(
         confidence=_CONF)},
     flows={"type": "array", "items": _obj(
         id=_STR, purpose=_STR, role={"type": "string", "enum": ROLES}, use_case=_STR, evidence=_IDS, confidence=_CONF)},
+    programmes={"type": "array", "items": _obj(
+        id=_STR, name=_STR, summary=_STR, kind={"type": "string", "enum": KINDS}, parts=_IDS,
+        story={"type": "array", "items": _STATEMENT},
+        watch={"type": "array", "items": _STATEMENT},
+        confidence=_CONF)},
     edges={"type": "array", "items": _obj(id=_STR, meaning=_STR)},
     systems={"type": "array", "items": _obj(host=_STR, name=_STR, confidence=_CONF)},
 )
@@ -214,8 +219,56 @@ def validate(out, facts):
     org_summary = {"text": str(summary.get("text") or ""), "evidence": ev,
                    "confidence": (summary.get("confidence") if summary.get("confidence") in CONFIDENCE else "guess") if ev else "guess"}
 
-    return ({"org_summary": org_summary, "use_cases": use_cases, "flows": flows, "not_placed": not_placed,
-             "edges": edges, "systems": systems}, problems)
+    programmes = _programmes(out, use_cases, statements, problems)
+
+    return ({"org_summary": org_summary, "programmes": programmes, "use_cases": use_cases, "flows": flows,
+             "not_placed": not_placed, "edges": edges, "systems": systems}, problems)
+
+
+def _programmes(out, use_cases, statements, problems):
+    """Group the validated use cases into programmes. An answer without programmes (from before
+    they existed) gets one programme per use case; a use case left out of every programme gets
+    its own, and that is reported."""
+    by_id = {u["id"]: u for u in use_cases}
+    given = out.get("programmes")
+    if not isinstance(given, list):
+        return [_wrap(u) for u in use_cases]
+    owner, programmes, taken = {}, [], set()
+    for p in given:
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get("name") or "Unnamed programme")
+        parts = []
+        for pid in p.get("parts", []) if isinstance(p.get("parts"), list) else []:
+            if pid not in by_id:
+                problems.append(f"programme {name}: unknown use case ID {pid}")
+            elif pid in owner:
+                problems.append(f"programme {name}: use case {by_id[pid]['name']} is already in programme {owner[pid]}")
+            elif pid not in parts:
+                parts.append(pid)
+        if not parts:
+            problems.append(f"programme {name} was dropped because none of its parts are use cases in the answer")
+            continue
+        for pid in parts:
+            owner[pid] = name
+        programmes.append({
+            "id": _slug(p.get("id") or name, taken), "name": name, "summary": str(p.get("summary") or ""),
+            "kind": p.get("kind") if p.get("kind") in KINDS else by_id[parts[0]]["kind"], "parts": parts,
+            "story": statements(p.get("story"), f"{name}, story"),
+            "watch": statements(p.get("watch"), f"{name}, watch"),
+            "confidence": p.get("confidence") if p.get("confidence") in CONFIDENCE else "guess",
+        })
+    for u in use_cases:
+        if u["id"] not in owner:
+            problems.append(f"use case {u['name']} is not in any programme, so it is shown as its own")
+            programmes.append(_wrap(u, {p["id"] for p in programmes}))
+    return programmes
+
+
+def _wrap(u, taken=()):
+    pid = u["id"] if u["id"] not in taken else _slug(u["id"], set(taken))
+    return {"id": pid, "name": u["name"], "summary": u["summary"], "kind": u["kind"], "parts": [u["id"]],
+            "story": [], "watch": [], "confidence": u["confidence"]}
 
 
 def run_usecases(facts, client=None):

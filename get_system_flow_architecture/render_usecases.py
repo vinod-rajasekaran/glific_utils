@@ -35,6 +35,13 @@ class _Ctx:
         self.claude_flow = {f["id"]: f for f in uc["flows"]}
         self.uc_of = {fid: u["id"] for u in uc["use_cases"] for fid in u["flows"]}
         self.uc_name = {u["id"]: u["name"] for u in uc["use_cases"]}
+        self.use_case = {u["id"]: u for u in uc["use_cases"]}
+        self.programmes = uc.get("programmes") or [
+            {"id": u["id"], "name": u["name"], "summary": u["summary"], "kind": u["kind"], "parts": [u["id"]],
+             "story": [], "watch": [], "confidence": u["confidence"]} for u in uc["use_cases"]]
+        self.prog_of_uc = {pid: p["id"] for p in self.programmes for pid in p["parts"]}
+        self.prog_of = {fid: self.prog_of_uc[u] for fid, u in self.uc_of.items() if u in self.prog_of_uc}
+        self.prog_name = {p["id"]: p["name"] for p in self.programmes}
         self.excerpt = {e["id"]: (f["id"], e) for f in facts["flows"] for e in f["excerpts"]}
         self.group = {g["id"]: g for g in facts["groups"]}
         self.trigger = {x["id"]: x for x in facts["triggers"]}
@@ -160,17 +167,21 @@ def flow_pane(cx, fid, findings):
         items = "".join(cx.evidence_item(r) for r in c.get("evidence", []))
         purpose = (f'<p class="purpose">{claude_label(c.get("confidence", "guess"))}<br>{t(c["purpose"])}</p>'
                    + (f'<details class="evd"><summary>Evidence</summary><ul>{items}</ul></details>' if items else ""))
-    home = cx.uc_of.get(fid)
-    where = f'<p class="muted">Use case: <a href="#uc-{esc(home)}">{t(cx.uc_name[home])}</a></p>' if home else '<p class="muted">Not placed in a use case.</p>'
+    part, home = cx.uc_of.get(fid), cx.prog_of.get(fid)
+    if home:
+        in_part = f"{t(cx.uc_name[part])}, in " if cx.prog_name[home] != cx.uc_name[part] else ""
+        where = f'<p class="muted">Part of {in_part}<a href="#uc-{esc(home)}">{t(cx.prog_name[home])}</a></p>'
+    else:
+        where = '<p class="muted">Not placed in a use case.</p>'
 
     def io(items, heading):
         rows = []
         for s in items:
             link = ""
             if s["kind"] in ("flow", "data") and s["ref"] in cx.flow:
-                other = cx.uc_of.get(s["ref"])
+                other = cx.prog_of.get(s["ref"])
                 if other and other != home:
-                    link = f' <a href="#uc-{esc(other)}">({t(cx.uc_name[other])})</a>'
+                    link = f' <a href="#uc-{esc(other)}">({t(cx.prog_name[other])})</a>'
             for eid in (f"edge:{s['ref']}:{fid}:start", f"edge:{fid}:{s['ref']}:start"):
                 if eid in cx.edge_meaning:
                     link += f' <span class="meaning">(Claude: {t(cx.edge_meaning[eid])})</span>'
@@ -182,39 +193,74 @@ def flow_pane(cx, fid, findings):
             + card)
 
 
-def usecase_view(cx, u, findings, tag):
-    m, members = cx.m, list(u["flows"])
+def part_chip(n, name):
+    return f'<span class="partchip"><i class="pdot p{n}"></i>{t(name)}</span>'
+
+
+def programme_view(cx, prog, findings, tag):
+    """One programme: a graph of all its parts' flows (each box striped by its part) beside a pane
+    with the programme's story and a section per part."""
+    m, pid = cx.m, prog["id"]
+    parts = [cx.use_case[x] for x in prog["parts"]]
+    part_no = {u["id"]: min(i, 6) for i, u in enumerate(parts, 1)}
+    members = [fid for u in parts for fid in u["flows"]]
+    part_of = {fid: part_no[cx.uc_of[fid]] for fid in members} if len(parts) > 1 else {}
     near = neighbours(cx, set(members))
     m.graph_view(set(members) | near)
-    svg, tpls = graph_svg(m, m.edges(), findings, ns=f"{u['id']}-", faded=near)
-    panes = "".join(f'<template id="pane-{esc(u["id"])}-f-{esc(fid)}">{flow_pane(cx, fid, findings)}</template>'
+    svg, tpls = graph_svg(m, m.edges(), findings, ns=f"{pid}-", faded=near, part_of=part_of)
+    panes = "".join(f'<template id="pane-{esc(pid)}-f-{esc(fid)}">{flow_pane(cx, fid, findings)}</template>'
                     for fid in sorted(m.on_map, key=lambda x: cx.flow[x]["name"].lower()) if fid in cx.flow)
-    story = (f'<div class="pane-story"><p class="muted">{claude_label(u["confidence"])}</p>'
-             + statements(cx, "What happens", u["story"])
-             + statements(cx, "How it works", u["how_it_works"])
-             + statements(cx, "What to watch", u["watch"], " w")
-             + '<p class="hint">Select a box in the graph to see that flow in detail. Faded boxes belong to other use cases.</p></div>')
-    cards = "".join(f'<div class="fcard" id="card-{esc(u["id"])}-{esc(fid)}">{flow_pane(cx, fid, findings)}</div>' for fid in members)
-    return (f'<section class="ucview" id="uc-{esc(u["id"])}" hidden>'
-            f'<p><a class="back" href="#">← All use cases</a></p>'
-            f'<h2>{t(u["name"])}</h2><p class="lede2"><span class="reading">Claude\u2019s reading</span><br>{t(u["summary"])}</p><div class="pills">{pills(cx, u, tag)}</div>'
+    sections = ""
+    if len(parts) > 1:
+        for k, u in enumerate(parts):
+            sections += (f'<details class="part"{" open" if k == 0 else ""}><summary>{part_chip(part_no[u["id"]], u["name"])}</summary>'
+                         f'<p class="psum">{t(u["summary"])}</p>'
+                         + statements(cx, "What happens", u["story"])
+                         + statements(cx, "How it works", u["how_it_works"])
+                         + statements(cx, "What to watch", u["watch"], " w") + "</details>")
+    else:
+        u = parts[0]
+        sections = (statements(cx, "What happens", u["story"]) + statements(cx, "How it works", u["how_it_works"])
+                    + statements(cx, "What to watch", u["watch"], " w"))
+    story = (f'<div class="pane-story"><p class="muted">{claude_label(prog["confidence"])}</p>'
+             + statements(cx, "The programme end to end", prog["story"])
+             + statements(cx, "What to watch across it", prog["watch"], " w")
+             + (f'<h3 class="ph">Its parts</h3>' if len(parts) > 1 else "") + sections
+             + '<p class="hint">Select a box in the graph to see that flow in detail. Faded boxes belong to other programmes.</p></div>')
+    legend = f'<div class="partlegend">{"".join(part_chip(part_no[u["id"]], u["name"]) for u in parts)}</div>' if len(parts) > 1 else ""
+    cards = ""
+    for u in parts:
+        if len(parts) > 1:
+            cards += f'<h4 class="cardgroup">{part_chip(part_no[u["id"]], u["name"])}</h4>'
+        cards += '<div class="fcards">' + "".join(
+            f'<div class="fcard" id="card-{esc(pid)}-{esc(fid)}">{flow_pane(cx, fid, findings)}</div>' for fid in u["flows"]) + "</div>"
+    whole = {"flows": members, "watch": prog["watch"] + [w for u in parts for w in u["watch"]]}
+    return (f'<section class="ucview" id="uc-{esc(pid)}" hidden>'
+            f'<p><a class="back" href="#">\u2190 All programmes</a></p>'
+            f'<h2>{t(prog["name"])}</h2><p class="lede2"><span class="reading">Claude\u2019s reading</span><br>{t(prog["summary"])}</p>'
+            f'<div class="pills">{pills(cx, whole, tag)}</div>{legend}'
             f'<div class="ucgrid"><div class="gscroll">{svg}</div>'
-            f'<aside class="pane" aria-live="polite"><button type="button" class="pane-back" hidden>← Back to the story</button>'
+            f'<aside class="pane" aria-live="polite"><button type="button" class="pane-back" hidden>\u2190 Back to the story</button>'
             f'<div class="pane-body">{story}</div><template class="story-tpl">{story}</template></aside></div>'
-            f'<h3 class="sub">Every flow in this use case</h3><div class="fcards">{cards}</div>'
+            f'<h3 class="sub">Every flow in this programme</h3>{cards}'
             + "".join(tpls) + panes + "</section>")
 
 
 def render_usecase_page(m, facts, uc, dropped, st):
     cx = _Ctx(m, facts, uc)
     findings = list(m.findings)
-    order = sorted(uc["use_cases"], key=lambda u: u["kind"] == "tests")
-    cards = "".join(
-        f'<a class="uccard{" muted-card" if u["kind"] == "tests" else ""}" href="#uc-{esc(u["id"])}">'
-        f'<h3>{t(u["name"])}</h3><p><span class="reading">Claude\u2019s reading</span><br>{t(u["summary"])}</p>'
-        f'<div class="pills">{pills(cx, u, st.tag)}</div></a>'
-        for u in order)
-    views = "".join(usecase_view(cx, u, findings, st.tag) for u in order)
+    order = sorted(cx.programmes, key=lambda p: p["kind"] == "tests")
+    cards = ""
+    for p in order:
+        parts = [cx.use_case[x] for x in p["parts"]]
+        whole = {"flows": [fid for u in parts for fid in u["flows"]], "watch": p["watch"] + [w for u in parts for w in u["watch"]]}
+        chips = (f'<div class="partlegend">{"".join(part_chip(min(i, 6), u["name"]) for i, u in enumerate(parts, 1))}</div>'
+                 if len(parts) > 1 else "")
+        cards += (f'<a class="uccard{" muted-card" if p["kind"] == "tests" else ""}" href="#uc-{esc(p["id"])}">'
+                  f'<h3>{t(p["name"])}</h3><p><span class="reading">Claude\u2019s reading</span><br>{t(p["summary"])}</p>'
+                  f'{chips}<div class="pills">{pills(cx, whole, st.tag)}</div></a>')
+    shared = shared_resources(m)     # before the views, which change the model's graph
+    views = "".join(programme_view(cx, p, findings, st.tag) for p in order)
 
     org = uc["org_summary"]
     org_items = "".join(cx.evidence_item(r) for r in org["evidence"])
@@ -234,16 +280,16 @@ def render_usecase_page(m, facts, uc, dropped, st):
 
     active_n = sum(map(len, m.active_trig.values()))
     lede = (f"{plural(len(facts['flows']), 'active flow')} in the export, grouped by Claude into "
-            f"{plural(len(uc['use_cases']), 'use case')}. {plural(active_n, 'trigger')} "
+            f"{plural(len(cx.programmes), 'programme')} with {plural(len(uc['use_cases']), 'part')}. {plural(active_n, 'trigger')} "
             f"{'is' if active_n == 1 else 'are'} active on {fmt_day(datetime.combine(st.today, datetime.min.time()))}. "
             f"Times are in {m.tz_label}.")
     footer = " ".join(x for x in [st.footer.strip(), f"Use cases and descriptions by Claude ({MODEL}); every number, link and "
                                   "schedule comes from flows.json and triggers.json. Generated by glific_utils."] if x)
     page = Template(UC_PAGE).substitute(
         css=BASE_CSS + UC_CSS, title=esc(f"{st.project} use cases"), h1=t(f"{st.project}: what the bot does"),
-        lede=t(lede), org=org_html, cards=cards, shared=shared_resources(m), not_placed=not_placed,
+        lede=t(lede), org=org_html, cards=cards, shared=shared, not_placed=not_placed,
         dropped=dropped_html, views=views, footer=t(footer),
-        uc_of=json.dumps({f"f-{k}": v for k, v in cx.uc_of.items()}).replace("</", "<\\/"))
+        uc_of=json.dumps({f"f-{k}": v for k, v in cx.prog_of.items()}).replace("</", "<\\/"))
     b = _Balance()
     b.feed(page)
     if b.errors or b.stack:
@@ -302,6 +348,20 @@ p.ev{padding-left:10px}
 .fcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 .plain{margin:0;padding-left:18px}
 .plain li{margin:0 0 4px}
+:root{--p1:#2F7FBF;--p2:#C2570C;--p3:#2E8B57;--p4:#8E4EC6;--p5:#B8860B;--p6:#D6336C}
+.pdot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:0}
+.pdot.p1,.fgraph .node rect.pstripe.p1{background:var(--p1);fill:var(--p1)}
+.pdot.p2,.fgraph .node rect.pstripe.p2{background:var(--p2);fill:var(--p2)}
+.pdot.p3,.fgraph .node rect.pstripe.p3{background:var(--p3);fill:var(--p3)}
+.pdot.p4,.fgraph .node rect.pstripe.p4{background:var(--p4);fill:var(--p4)}
+.pdot.p5,.fgraph .node rect.pstripe.p5{background:var(--p5);fill:var(--p5)}
+.pdot.p6,.fgraph .node rect.pstripe.p6{background:var(--p6);fill:var(--p6)}
+.partchip{display:inline-flex;align-items:center;font-size:13px;font-weight:700;color:var(--ink);margin-right:12px}
+.partlegend{display:flex;flex-wrap:wrap;gap:4px 0;margin:2px 0 10px}
+.part{border-top:1px solid var(--soft);padding:8px 0 4px}
+.part summary{cursor:pointer;list-style-position:outside}
+.psum{font-size:13.5px;color:var(--muted);margin:6px 0 0}
+.cardgroup{margin:18px 0 10px}
 .fgraph .node.faded{opacity:.4}
 .fgraph .node.faded rect{stroke-dasharray:4 3}
 .fgraph .node.sel rect{stroke-width:3;stroke:var(--ink)}
@@ -336,8 +396,8 @@ UC_PAGE = """<!DOCTYPE html>
 <main>
 <section id="home">
 $org
-<h2 style="margin:26px 0 6px">Use cases</h2>
-<p class="muted">Names, summaries and dashed pills are Claude\u2019s reading of the flows. Everything else comes from the export.</p>
+<h2 style="margin:26px 0 6px">What the bot does</h2>
+<p class="muted">Programme and part names, summaries and dashed pills are Claude\u2019s reading of the flows. Everything else comes from the export.</p>
 <div class="uccards">$cards</div>
 $shared
 </section>
