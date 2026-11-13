@@ -32,22 +32,21 @@ def _obj(**props):
 _STR = {"type": "string"}
 _IDS = {"type": "array", "items": _STR}
 _CONF = {"type": "string", "enum": CONFIDENCE}
-_STATEMENT = _obj(text=_STR, refs=_IDS, evidence=_IDS, confidence=_CONF)
+def _statements(*sections):
+    """One list of statements per object, each saying which section it belongs to. One list (not one per
+    section) keeps the compiled grammar small enough for structured output."""
+    return {"type": "array", "items": _obj(section={"type": "string", "enum": list(sections)}, text=_STR, refs=_IDS,
+                                           evidence=_IDS, confidence=_CONF)}
 SCHEMA = _obj(
     org_summary=_obj(text=_STR, evidence=_IDS, confidence=_CONF),
     use_cases={"type": "array", "items": _obj(
         id=_STR, name=_STR, summary=_STR, kind={"type": "string", "enum": KINDS}, flows=_IDS,
-        story={"type": "array", "items": _STATEMENT},
-        how_it_works={"type": "array", "items": _STATEMENT},
-        watch={"type": "array", "items": _STATEMENT},
-        confidence=_CONF)},
+        statements=_statements("story", "how_it_works", "watch"), confidence=_CONF)},
     flows={"type": "array", "items": _obj(
         id=_STR, purpose=_STR, role={"type": "string", "enum": ROLES}, use_case=_STR, evidence=_IDS, confidence=_CONF)},
     programmes={"type": "array", "items": _obj(
         id=_STR, name=_STR, summary=_STR, kind={"type": "string", "enum": KINDS}, parts=_IDS,
-        story={"type": "array", "items": _STATEMENT},
-        watch={"type": "array", "items": _STATEMENT},
-        confidence=_CONF)},
+        statements=_statements("story", "watch"), confidence=_CONF)},
     edges={"type": "array", "items": _obj(id=_STR, meaning=_STR)},
     systems={"type": "array", "items": _obj(host=_STR, name=_STR, confidence=_CONF)},
 )
@@ -112,6 +111,13 @@ def _slug(text, taken):
     return slug
 
 
+def _section(obj, name):
+    """Statements of one section, from the schema's single "statements" list or an older answer's per-section lists."""
+    if isinstance(obj.get("statements"), list):
+        return [x for x in obj["statements"] if isinstance(x, dict) and x.get("section") == name]
+    return obj.get(name)
+
+
 def validate(out, facts):
     """Return (cleaned output, problems). Raises UsecaseError when nothing usable is left."""
     if not isinstance(out, dict) or not isinstance(out.get("use_cases"), list):
@@ -161,9 +167,9 @@ def validate(out, facts):
         use_cases.append({
             "id": uid, "name": name, "summary": str(u.get("summary") or ""),
             "kind": u.get("kind") if u.get("kind") in KINDS else "journey", "flows": flows,
-            "story": statements(u.get("story"), f"{name}, story"),
-            "how_it_works": statements(u.get("how_it_works"), f"{name}, how it works"),
-            "watch": statements(u.get("watch"), f"{name}, watch"),
+            "story": statements(_section(u, "story"), f"{name}, story"),
+            "how_it_works": statements(_section(u, "how_it_works"), f"{name}, how it works"),
+            "watch": statements(_section(u, "watch"), f"{name}, watch"),
             "confidence": u.get("confidence") if u.get("confidence") in CONFIDENCE else "guess",
         })
     if not use_cases:
@@ -254,8 +260,8 @@ def _programmes(out, use_cases, statements, problems):
         programmes.append({
             "id": _slug(p.get("id") or name, taken), "name": name, "summary": str(p.get("summary") or ""),
             "kind": p.get("kind") if p.get("kind") in KINDS else by_id[parts[0]]["kind"], "parts": parts,
-            "story": statements(p.get("story"), f"{name}, story"),
-            "watch": statements(p.get("watch"), f"{name}, watch"),
+            "story": statements(_section(p, "story"), f"{name}, story"),
+            "watch": statements(_section(p, "watch"), f"{name}, watch"),
             "confidence": p.get("confidence") if p.get("confidence") in CONFIDENCE else "guess",
         })
     for u in use_cases:

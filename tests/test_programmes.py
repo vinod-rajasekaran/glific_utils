@@ -99,3 +99,25 @@ class RenderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CompactSchemaTest(unittest.TestCase):
+    def test_schema_has_two_statement_lists(self):
+        self.assertLessEqual(json.dumps(uc.SCHEMA).count('"refs"'), 4)   # 2 statement lists, each names refs twice
+
+    def test_statements_with_sections_are_split(self):
+        raw = json.loads((FIX / "claude_output_programmes.json").read_text())
+        for u in raw["use_cases"]:
+            u["statements"] = ([dict(s, section="story") for s in u.pop("story")] +
+                               [dict(s, section="how_it_works") for s in u.pop("how_it_works")] +
+                               [dict(s, section="watch") for s in u.pop("watch")])
+        for p in raw["programmes"]:
+            p["statements"] = [dict(s, section="story") for s in p.pop("story")] + [dict(s, section="watch") for s in p.pop("watch")]
+        flows = json.loads((FIX / "flows.json").read_text())
+        triggers = json.loads((FIX / "triggers.json").read_text())
+        m = ra.Model(flows, triggers, ra.Settings(layout="graph", scope_all=True, today=date(2026, 11, 13)))
+        v, _ = uc.validate(raw, uf.build_facts(m))
+        tips = next(u for u in v["use_cases"] if u["id"] == "weekly-tips")
+        self.assertEqual((len(tips["story"]), len(tips["how_it_works"]), len(tips["watch"])), (3, 1, 1))
+        prog = next(p for p in v["programmes"] if p["id"] == "healthy-families")
+        self.assertEqual((len(prog["story"]), len(prog["watch"])), (1, 1))
