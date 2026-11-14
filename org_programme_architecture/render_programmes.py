@@ -8,6 +8,7 @@ the model and the facts, not from Claude.
 """
 import json
 import re
+from pathlib import Path
 from collections import Counter
 from datetime import datetime
 from string import Template
@@ -22,6 +23,8 @@ from programme_claude import MODEL
 BASE_CSS = re.search(r"<style>(.*?)</style>", PAGE, re.S).group(1)
 ROLE_LABEL = {"core": "Core", "helper": "Helper", "shared": "Shared", "test": "Test", "leftover": "Leftover", "unknown": "Role unclear"}
 CONF_LABEL = {"clear": "clear", "likely": "likely", "guess": "a guess"}
+
+ASSETS = Path(__file__).resolve().parent / "assets"   # page markup, styles and scripts, inlined at build time
 
 
 def t(text):
@@ -368,181 +371,6 @@ def render_programme_page(m, facts, uc, dropped, st, graph_model=None):
     return page
 
 
-UC_CSS = """
-.uccards{display:grid;grid-template-columns:1fr;gap:16px;margin-top:8px}
-.uccard{display:block;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;color:var(--ink);text-decoration:none;transition:box-shadow .15s,border-color .15s}
-.uccard:hover,.uccard:focus-visible{border-color:var(--flow);box-shadow:0 0 0 2px var(--flow);outline:none}
-.uccard h3{margin-bottom:6px}
-.uccard p{margin:0 0 10px;font-size:14px;color:var(--muted)}
-.muted-card{opacity:.75}
-.pills{display:flex;flex-wrap:wrap;gap:6px}
-.pill2{font-size:12px;line-height:1;padding:5px 8px;border-radius:99px;border:1px solid var(--line);background:var(--soft);color:var(--ink)}
-.pill2.sys{border-color:var(--slate);background:var(--slate-bg)}
-.pill2.warn{border-color:var(--trig);background:var(--trig-bg);color:var(--trig)}
-.pill2.claude{border-style:dashed}
-.org{max-width:80ch;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:0 0 8px}
-.org p{margin:4px 0}
-.reading{font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--muted)}
-.conf{font:inherit;font-size:11.5px;line-height:1;padding:3px 7px;border-radius:99px;border:1px solid var(--line);background:var(--surface);color:var(--muted);cursor:pointer;vertical-align:1px}
-.conf.c-clear{border-color:var(--ok);color:var(--ok)}
-.conf.c-likely{border-color:var(--flow);color:var(--flow)}
-.conf.c-guess{border-color:var(--trig);color:var(--trig);border-style:dashed}
-span.conf{cursor:default}
-.muted{color:var(--muted);font-size:13.5px;margin:0 0 6px}
-.lede2{color:var(--muted);max-width:80ch;margin:4px 0 10px}
-.back,.pane-back{font-size:14px;color:var(--flow)}
-.pane-back{font:inherit;font-size:14px;background:none;border:0;padding:0;margin:0 0 10px;cursor:pointer}
-.ucgrid{display:grid;grid-template-columns:1fr;gap:18px;margin-top:14px}
-.ucgrid .gscroll{margin-bottom:0;align-self:start}
-.pane{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-.ph{font-size:16px;margin:14px 0 6px}
-.ph.w{color:var(--warn)}
-.sts{margin:0;padding-left:18px}
-.st{margin:0 0 8px;font-size:14px;line-height:1.5}
-.ev{margin:6px 0 4px;padding:8px 10px 8px 22px;background:var(--soft);border-radius:8px;font-size:13px}
-.ev li{margin:0 0 4px}
-p.ev{padding-left:10px}
-.hint{font-size:13px;color:var(--muted);margin:14px 0 0}
-.fp-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px}
-.role{font-size:12px;padding:4px 8px;border-radius:99px;border:1px solid var(--flow);color:var(--flow);white-space:nowrap}
-.role.r-test,.role.r-leftover{border-color:var(--trig);color:var(--trig)}
-.role.claude{border-style:dashed}
-.purpose{font-size:14px;margin:0 0 6px}
-.evd{padding:0 0 8px;border:0;font-size:13px}
-.evd ul{margin:6px 0 0;padding-left:18px}
-.io{margin:0 0 8px;padding-left:18px;font-size:13.5px}
-.io li{margin:0 0 3px}
-.meaning{color:var(--muted);font-style:italic}
-.pane h4{font-family:var(--head);font-size:14px;margin:10px 0 4px}
-.pane .card{margin-top:10px}
-.sub{margin:28px 0 10px}
-.fcards{display:grid;grid-template-columns:1fr;gap:16px}
-.fcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-.plain{margin:0;padding-left:18px}
-.plain li{margin:0 0 4px}
-:root{--p1:#2F7FBF;--p2:#C2570C;--p3:#2E8B57;--p4:#8E4EC6;--p5:#B8860B;--p6:#D6336C}
-.pdot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:0}
-.pdot.p1,.fgraph .node rect.pstripe.p1{background:var(--p1);fill:var(--p1)}
-.pdot.p2,.fgraph .node rect.pstripe.p2{background:var(--p2);fill:var(--p2)}
-.pdot.p3,.fgraph .node rect.pstripe.p3{background:var(--p3);fill:var(--p3)}
-.pdot.p4,.fgraph .node rect.pstripe.p4{background:var(--p4);fill:var(--p4)}
-.pdot.p5,.fgraph .node rect.pstripe.p5{background:var(--p5);fill:var(--p5)}
-.pdot.p6,.fgraph .node rect.pstripe.p6{background:var(--p6);fill:var(--p6)}
-.partchip{display:inline-flex;align-items:center;font-size:13px;font-weight:700;color:var(--ink);margin-right:12px}
-.partlegend{display:flex;flex-wrap:wrap;gap:4px 0;margin:2px 0 10px}
-.part{border-top:1px solid var(--soft);padding:8px 0 4px}
-.part summary{cursor:pointer;list-style-position:outside}
-.psum{font-size:13.5px;color:var(--muted);margin:6px 0 0}
-.cardgroup{margin:18px 0 10px}
-.graphcard{border-style:dashed}
-.factnote{font-size:14px;margin:6px 0 8px;padding:8px 10px;border-left:3px solid var(--trig);background:var(--soft);border-radius:0 6px 6px 0}
-.ucview .legend{margin:8px 0 4px}
-.fgraph .node.faded{opacity:.4}
-.fgraph .node.faded rect{stroke-dasharray:4 3}
-.fgraph .node.sel rect{stroke-width:3;stroke:var(--ink)}
-@media (min-width:1100px){
-  .uccards{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .ucgrid{grid-template-columns:minmax(0,1fr) 400px}
-  .pane{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
-  .fcards{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
-@media (min-width:700px) and (max-width:1099px){
-  .uccards{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
-"""
+UC_CSS = (ASSETS / "programmes.css").read_text(encoding="utf-8")
 
-UC_PAGE = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>$title</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@500;700&display=swap" rel="stylesheet">
-<style>$css</style>
-</head>
-<body>
-<div class="page">
-<header>
-  <h1>$h1</h1>
-  <p class="lede">$lede</p>
-</header>
-<main>
-<section id="home">
-$org
-<h2 style="margin:26px 0 6px">What the bot does</h2>
-<p class="muted">Programme and part names, summaries and dashed pills are Claude\u2019s reading of the flows. Everything else comes from the export.</p>
-<div class="uccards">$cards</div>
-$shared
-</section>
-$not_placed
-$dropped
-$views
-</main>
-<footer>$footer</footer>
-</div>
-<script>
-(function(){
-  var ucOf=$uc_of;
-  var home=document.getElementById('home');
-  var extras=[].slice.call(document.querySelectorAll('main > section.sect'));
-  function show(){
-    var h=location.hash.slice(1),view=h&&document.getElementById(h);
-    var isView=!!(view&&view.classList.contains('ucview'));
-    home.hidden=isView;extras.forEach(function(s){s.hidden=isView;});
-    document.querySelectorAll('.ucview').forEach(function(v){v.hidden=(v!==view);});
-    setTimeout(function(){window.scrollTo(0,0);},0);   // undo the browser's jump to the anchor
-  }
-  window.addEventListener('hashchange',show);
-  window.addEventListener('load',function(){if(location.hash)setTimeout(function(){window.scrollTo(0,0);},0);});
-  document.addEventListener('click',function(ev){
-    var b=ev.target.closest('button.conf');
-    if(b){var e=b.parentNode.querySelector('.ev');if(e){e.hidden=!e.hidden;b.setAttribute('aria-expanded',String(!e.hidden));}}
-  });
-  document.querySelectorAll('.ucview').forEach(function(view){
-    var ns=view.id.slice(3)+'-',svg=view.querySelector('svg.fgraph'),pane=view.querySelector('.pane'),body=pane.querySelector('.pane-body');
-    var back=pane.querySelector('.pane-back'),storyTpl=pane.querySelector('.story-tpl'),sel=null;
-    var nodes={};svg.querySelectorAll('.node').forEach(function(n){nodes[n.getAttribute('data-id')]=n;});
-    var wires=[].slice.call(svg.querySelectorAll('.edge'));
-    function light(id){
-      var near={};near[id]=1;
-      wires.forEach(function(w){var a=w.getAttribute('data-from'),b=w.getAttribute('data-to');if(a===id)near[b]=1;if(b===id)near[a]=1;});
-      Object.keys(nodes).forEach(function(k){nodes[k].classList.toggle('dim',!near[k]);});
-      wires.forEach(function(w){var hot=w.getAttribute('data-from')===id||w.getAttribute('data-to')===id;w.classList.toggle('hot',hot);w.classList.toggle('dim',!hot);});
-    }
-    function clear(){
-      if(sel){light(sel);return;}
-      Object.keys(nodes).forEach(function(k){nodes[k].classList.remove('dim');});
-      wires.forEach(function(w){w.classList.remove('hot','dim');});
-    }
-    function story(){
-      if(sel&&nodes[sel])nodes[sel].classList.remove('sel');
-      sel=null;body.innerHTML='';body.appendChild(storyTpl.content.cloneNode(true));back.hidden=true;clear();
-    }
-    function open(id){
-      var n=nodes[id],key=id.slice(ns.length);
-      if(n&&n.classList.contains('faded')&&ucOf[key]){location.hash='uc-'+ucOf[key];return;}
-      var tpl=document.getElementById('pane-'+id)||document.getElementById('tpl-'+id);if(!tpl)return;
-      if(sel&&nodes[sel])nodes[sel].classList.remove('sel');
-      sel=id;if(n)n.classList.add('sel');
-      body.innerHTML='';body.appendChild(tpl.content.cloneNode(true));back.hidden=false;light(id);pane.scrollTop=0;
-    }
-    Object.keys(nodes).forEach(function(id){
-      var n=nodes[id];
-      n.addEventListener('mouseenter',function(){light(id);});
-      n.addEventListener('mouseleave',clear);
-      n.addEventListener('focus',function(){light(id);});
-      n.addEventListener('blur',clear);
-      n.addEventListener('click',function(){open(id);});
-      n.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();open(id);}});
-    });
-    back.addEventListener('click',story);
-    view.addEventListener('keydown',function(ev){if(ev.key==='Escape'&&sel)story();});
-  });
-  show();
-})();
-</script>
-</body>
-</html>
-"""
+UC_PAGE = (ASSETS / "programmes_page.html").read_text(encoding="utf-8")

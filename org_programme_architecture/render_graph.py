@@ -15,6 +15,7 @@ No network access: this module only reads the data it is given.
 """
 import json
 import re
+from pathlib import Path
 from collections import Counter
 from datetime import datetime
 from html.parser import HTMLParser
@@ -27,6 +28,8 @@ from model import GRAPH_CAP, Model, Settings, setting_starts  # noqa: F401
 from schedules import WEEKDAYS, schedule_text, window_text  # noqa: F401
 from sections import context_section, shared_resources, strip_section, tagging_gaps  # noqa: F401
 from text import esc, fmt_day, join, names, plural, typo  # noqa: F401
+
+ASSETS = Path(__file__).resolve().parent / "assets"   # page markup, styles and scripts, inlined at build time
 
 
 class _Balance(HTMLParser):
@@ -151,215 +154,7 @@ def render_html(flows, triggers, settings=None, out=None, org=None):
     return page, list(dict.fromkeys(findings))
 
 
-PAGE = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>$title</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@500;700&display=swap" rel="stylesheet">
-<style>
-:root{
-  --bg:#F2F5F5; --surface:#FFFFFF; --ink:#15202B; --muted:#55616D; --line:#D5DCE0; --soft:#E8EDEF;
-  --flow:#1B5A70; --flow-bg:#E4EFF3; --trig:#9A5A08; --trig-bg:#FBEFD9; --ok:#2B7A4B; --wire:#8593A0; --warn:#9B3B2E;
-  --chat:#2B6B45; --chat-bg:#E2F1E7; --slate:#4A5663; --slate-bg:#E8ECEF;
-  --head:"Bricolage Grotesque","Trebuchet MS",system-ui,sans-serif;
-  --body:"Atkinson Hyperlegible","Segoe UI",system-ui,sans-serif;
-  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
-  padding-left:env(safe-area-inset-left,0px); padding-right:env(safe-area-inset-right,0px);
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --bg:#10171C; --surface:#18222A; --ink:#E7EDF1; --muted:#9AA7B3; --line:#2B3843; --soft:#222E37;
-    --flow:#86C6DA; --flow-bg:#1B3441; --trig:#E6AC55; --trig-bg:#3A2D16; --ok:#6CC38D; --wire:#6F7F8D; --warn:#E58A7B;
-    --chat:#7FCB9C; --chat-bg:#1B3325; --slate:#A9B6C2; --slate-bg:#222C34; color-scheme:dark;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#10171C; --surface:#18222A; --ink:#E7EDF1; --muted:#9AA7B3; --line:#2B3843; --soft:#222E37;
-  --flow:#86C6DA; --flow-bg:#1B3441; --trig:#E6AC55; --trig-bg:#3A2D16; --ok:#6CC38D; --wire:#6F7F8D; --warn:#E58A7B;
-  --chat:#7FCB9C; --chat-bg:#1B3325; --slate:#A9B6C2; --slate-bg:#222C34; color-scheme:dark;
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55}
-.page{max-width:1400px;margin:0 auto;padding:40px 16px 28px}
-h1{font-family:var(--head);font-weight:700;font-size:32px;line-height:1.15;margin:0 0 12px;max-width:30ch;overflow-wrap:anywhere}
-h2{font-family:var(--head);font-weight:700;font-size:22px;line-height:1.25;margin:0}
-h3{font-family:var(--head);font-weight:700;font-size:19px;line-height:1.25;margin:0}
-.lede{max-width:75ch;color:var(--muted);margin:0 0 20px}
-.legend{display:flex;flex-wrap:wrap;gap:10px 26px;font-size:14px;color:var(--muted);margin:0 0 26px;align-items:center}
-.legend span{display:inline-flex;align-items:center;gap:8px}
-.sw{width:22px;height:14px;border-radius:4px;border:1px solid var(--line);display:inline-block}
-.sw.t{background:var(--trig-bg);border-color:var(--trig)}
-.sw.f{background:var(--flow-bg);border-color:var(--flow)}
-.sw.u{background:var(--surface);border:1px dashed var(--muted)}
-.sw.s{background:var(--slate-bg);border-color:var(--slate)}
-.sw.g{background:var(--chat-bg);border-color:var(--chat)}
-.ln{width:30px;height:0;border-top:2px solid var(--wire);display:inline-block}
-.ln.d{border-top-style:dashed}
-.ln.g{border-top:3px dotted var(--chat)}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;transition:opacity .15s,box-shadow .15s}
-.card:focus-visible{outline:3px solid var(--flow);outline-offset:2px}
-.card.dim{opacity:.4}
-.card.on{box-shadow:0 0 0 2px var(--flow)}
-.card.untagged{border-style:dashed;border-color:var(--muted)}
-.ch{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:11px 14px;background:var(--flow-bg);border-bottom:1px solid var(--line)}
-.trigger .ch{background:var(--trig-bg)}
-.ch h3{overflow-wrap:anywhere;min-width:0}
-.tag,.pill{flex:none;font-size:12px;line-height:1;padding:5px 8px;border-radius:99px;background:var(--surface);white-space:nowrap;max-width:45%;overflow:hidden;text-overflow:ellipsis}
-.tag{border:1px solid var(--flow);color:var(--flow)}
-.tag.no{border-style:dashed;color:var(--muted);border-color:var(--muted)}
-.pill{border:1px solid var(--ok);color:var(--ok)}
-.r{display:grid;grid-template-columns:62px 1fr;gap:8px;padding:8px 14px;font-size:14px;line-height:1.45;border-top:1px solid var(--soft)}
-.r span:last-child{overflow-wrap:anywhere;min-width:0}
-.ch + .r{border-top:0}
-.sep{border-top:2px solid var(--line)}
-.k{font-weight:700;font-size:13px;color:var(--flow)}
-.trigger .k{color:var(--trig)}
-.k.mv{color:var(--trig)}
-.k.wn{color:var(--warn)}
-details{padding:8px 14px 11px;border-top:1px solid var(--soft);font-size:13.5px;color:var(--muted)}
-summary{cursor:pointer;font-weight:700;color:var(--ink);font-size:13px}
-summary:focus-visible{outline:3px solid var(--flow);outline-offset:2px}
-details p{margin:6px 0 0}
-.note{margin:18px 0 0;font-size:14px;color:var(--muted);max-width:95ch}
-.sect{margin-top:44px}
-.sect h2{margin-bottom:6px}
-.sect>p{margin:0 0 16px;color:var(--muted);max-width:80ch}
-.tbl{margin:22px 0 0;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-.tbl summary{cursor:pointer;padding:10px 14px;font-family:var(--head);font-weight:700;font-size:16px}
-.tblwrap{overflow-x:auto;padding:0 14px 12px}
-.tbl table{border-collapse:collapse;width:100%;font-size:13.5px}
-.tbl th{text-align:left;font-weight:700;color:var(--muted);padding:6px 10px 6px 0;border-bottom:1px solid var(--line)}
-.tbl td{padding:6px 10px 6px 0;border-bottom:1px solid var(--soft);vertical-align:top;overflow-wrap:anywhere}
-.gaps p{margin:0 0 10px;max-width:85ch;color:var(--ink)}
-.jrow{margin:0 0 22px}
-.jrow h3{margin-bottom:10px}
-.steps{display:flex;flex-wrap:wrap;gap:12px 26px}
-.step{position:relative;width:118px;min-height:64px;padding:8px 9px;border-radius:8px;border:1px solid var(--line);font-size:13.5px;line-height:1.35;display:flex;align-items:center;justify-content:center;text-align:center}
-.step:not(:last-child)::after{content:"";position:absolute;right:-17px;top:50%;width:9px;height:9px;border-top:2px solid var(--wire);border-right:2px solid var(--wire);transform:translateY(-50%) rotate(45deg)}
-.step.f{background:var(--trig-bg);border-color:var(--trig)}
-.step.d{background:var(--slate-bg);border-color:var(--slate)}
-.step.c{background:var(--chat-bg);border-color:var(--chat)}
-.ctx{max-width:760px}
-.ctx .body{padding:8px 14px;font-size:14px}
-.ctx .body p{margin:6px 0}
-.ghint{margin:0 0 12px;font-size:14px;color:var(--muted);max-width:90ch}
-.gscroll{margin-bottom:22px;overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
-.fgraph{display:block;width:100%;min-width:calc(var(--w) * .75);height:auto}
-.fgraph .edge path{fill:none;stroke:var(--wire);stroke-width:1.6;transition:opacity .15s,stroke .15s}
-.fgraph .edge.data path{stroke-dasharray:6 5}
-.fgraph .edge.hot path{stroke:var(--flow);stroke-width:2.6}
-.fgraph .edge.dim{opacity:.12}
-.fgraph .elabel{font-size:11.5px;fill:var(--muted);paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round}
-.fgraph .edge.hot .elabel{fill:var(--flow);font-weight:700}
-.fgraph .node{cursor:pointer;transition:opacity .15s}
-.fgraph .node rect{fill:var(--flow-bg);stroke:var(--flow);stroke-width:1.3}
-.fgraph .node.untagged rect{fill:var(--surface);stroke:var(--muted);stroke-dasharray:5 4}
-.fgraph .node.trig rect{fill:var(--trig-bg);stroke:var(--trig)}
-.fgraph .pstripe{stroke:none}
-.fgraph .node.setting rect{fill:var(--slate-bg);stroke:var(--slate)}
-.fgraph .node.nostart rect{fill:var(--slate-bg);stroke:var(--slate);stroke-dasharray:3 3}
-.fgraph .node.grp rect{fill:var(--chat-bg);stroke:var(--chat);rx:26}
-.fgraph .edge.grp path{stroke:var(--chat);stroke-dasharray:2 4;stroke-linecap:round}
-.fgraph .edge.grp.rm path{stroke:var(--warn)}
-.fgraph .edge.grp.hot path{stroke-width:2.6}
-.fgraph .edge.back{opacity:.45}
-.fgraph .edge.back .elabel{display:none}
-.fgraph .edge.back.hot{opacity:1}
-.fgraph .edge.back.hot .elabel{display:inline}
-.fgraph .edge.back.dim{opacity:.08}
-.fgraph .ntag{font-size:12px;fill:var(--trig);font-style:italic}
-.fgraph .ntag.plain{fill:var(--muted)}
-.fgraph .node.on rect{stroke-width:2.6}
-.fgraph .node:focus{outline:none}
-.fgraph .node:focus-visible rect{stroke-width:3;stroke:var(--ink)}
-.fgraph .node.dim{opacity:.35}
-.fgraph .nname,.fgraph .tname{font-family:var(--head);font-weight:700;font-size:14px;fill:var(--ink)}
-.fgraph .nmeta,.fgraph .tmeta{font-size:12px;fill:var(--muted)}
-.fgraph .nmeta .mv{fill:var(--trig);font-weight:700}
-.fgraph .nmeta .wn{fill:var(--warn);font-weight:700}
-.panel{position:fixed;top:0;right:0;bottom:0;width:min(420px,100vw);overflow:auto;z-index:10;background:var(--bg);border-left:1px solid var(--line);
-  box-shadow:-8px 0 24px rgba(0,0,0,.18);padding:calc(16px + env(safe-area-inset-top,0px)) 16px 24px}
-.panel[hidden]{display:none}
-.panel .close{float:right;font:inherit;font-size:22px;line-height:1;width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;margin:0 0 10px 10px}
-.panel .card{clear:both}
-footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
-@media (min-width:1100px){
-}
-@media (min-width:700px) and (max-width:1099px){
-}
-</style>
-</head>
-<body>
-<div class="page">
-<header>
-  <h1>$h1</h1>
-  <p class="lede">$lede</p>
-</header>
-<main>
-$context
-<section class="sect" style="margin-top:20px">
-<h2 style="margin-bottom:14px">Flows and triggers</h2>
-<div class="legend" aria-label="Legend">
-  <span><i class="sw t"></i>Trigger</span>
-  <span><i class="sw f"></i>$tag_legend</span>
-$untag_legend
-  <span><i class="ln"></i>Starts the flow</span>
-  <span><i class="ln d"></i>Hands over data through a contact field</span>$legend_extra
-</div>
-$map
-$notes
-</section>
-$strip
-$gaps
-</main>
-<footer>$footer</footer>
-</div>
-$script
-</body>
-</html>
-"""
+PAGE = (ASSETS / "graph_page.html").read_text(encoding="utf-8")
 
 
-GRAPH_JS = """<script>
-(function(){
-  var edges=$edges;
-  var svg=document.getElementById('graph'),panel=document.getElementById('panel'),body=document.getElementById('panel-body');
-  var nodes={},sel=null;
-  svg.querySelectorAll('.node').forEach(function(n){nodes[n.getAttribute('data-id')]=n;});
-  var wires=Array.prototype.slice.call(svg.querySelectorAll('.edge'));
-  function light(id){
-    var near={};near[id]=1;
-    edges.forEach(function(e){if(e[0]===id)near[e[1]]=1;if(e[1]===id)near[e[0]]=1;});
-    Object.keys(nodes).forEach(function(k){nodes[k].classList.toggle('dim',!near[k]);nodes[k].classList.toggle('on',k===id);});
-    wires.forEach(function(w){var hot=w.getAttribute('data-from')===id||w.getAttribute('data-to')===id;w.classList.toggle('hot',hot);w.classList.toggle('dim',!hot);});
-  }
-  function clear(){
-    if(sel){light(sel);return;}
-    Object.keys(nodes).forEach(function(k){nodes[k].classList.remove('dim','on');});
-    wires.forEach(function(w){w.classList.remove('hot','dim');});
-  }
-  function open(id){
-    var t=document.getElementById('tpl-'+id);if(!t)return;
-    sel=id;body.innerHTML='';body.appendChild(t.content.cloneNode(true));panel.hidden=false;light(id);
-  }
-  function close(){
-    var was=sel;sel=null;panel.hidden=true;clear();if(was&&nodes[was])nodes[was].focus();
-  }
-  Object.keys(nodes).forEach(function(id){
-    var n=nodes[id];
-    n.addEventListener('mouseenter',function(){light(id);});
-    n.addEventListener('mouseleave',clear);
-    n.addEventListener('focus',function(){light(id);});
-    n.addEventListener('blur',clear);
-    n.addEventListener('click',function(){open(id);});
-    n.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();open(id);}});
-  });
-  panel.querySelector('.close').addEventListener('click',close);
-  document.addEventListener('keydown',function(ev){if(ev.key==='Escape'&&!panel.hidden)close();});
-  svg.addEventListener('click',function(ev){if(ev.target===svg)close();});
-})();
-</script>"""
+GRAPH_JS = (ASSETS / "graph.js").read_text(encoding="utf-8")
