@@ -101,9 +101,13 @@ def graph_section(m, findings):
 
 
 def render_html(flows, triggers, settings=None, out=None, org=None):
-    """Return (html, findings). Prints intermediate tables to `out` when given. org is settings.json."""
-    st = settings or Settings()
-    m = Model(flows, triggers, st, org=org)
+    """Build the model and return (html, findings). org is settings.json."""
+    return render_page(Model(flows, triggers, settings or Settings(), org=org), out=out)
+
+
+def render_page(m, out=None):
+    """Return (html, findings) for a model. Prints intermediate tables to `out` when given."""
+    st = m.st
     findings = m.findings
     edges = m.view.edges(m)
 

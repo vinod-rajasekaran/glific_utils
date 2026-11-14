@@ -27,7 +27,7 @@ from glific_get_flows import fetch_flows, login, run_dir, save_json
 from glific_get_settings import fetch_settings
 from glific_get_triggers import fetch_triggers
 from model import Model, Settings
-from render_graph import render_html
+from render_graph import render_page
 from render_programmes import render_programme_page
 from programme_claude import MODEL, PROMPT_PATH, ProgrammeError, run_programmes, validate
 from programme_facts import build_facts
@@ -105,13 +105,14 @@ def main():
 
     settings = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
                         notes=args.notes.read_text() if args.notes else "")
-    page, findings = render_html(flows, triggers, settings, out=sys.stderr, org=org)
+    graph_model = Model(flows, triggers, settings, org=org)      # built once: the graph page and the programme page's full graph
+    page, findings = render_page(graph_model, out=sys.stderr)
     print("\nFindings:" if findings else "\nFindings: none", file=sys.stderr)
     for f in findings:
         print(f"  {f}", file=sys.stderr)
     if args.programmes or args.reuse_claude:
         # One page per run: with programmes, the programme page (the full graph is one of its views)
-        page = programme_step(args, flows, triggers, out_dir, org, Model(flows, triggers, settings, org=org)) or page
+        page = programme_step(args, flows, triggers, out_dir, org, graph_model) or page
     path = out_dir / HTML_NAME
     path.write_text(page, encoding="utf-8")
     print(f"\nSaved {path}", file=sys.stderr)

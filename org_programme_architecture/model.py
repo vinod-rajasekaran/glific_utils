@@ -55,6 +55,8 @@ class Model:
         self.tz, self.tz_label = parse_tz(st.tz)
         self.flows = {f.get("uuid"): f for f in flows if f.get("uuid")}
         self.staff = staff_names(self.flows)
+        # Masked once here: names are read in every sort key and on every box
+        self._names = {u: mask(f.get("name") or u, self.staff) for u, f in self.flows.items()}
         self.graphs = {u: FlowGraph(f) for u, f in self.flows.items()}
         self.sum = {u: mask_summary(summarise(g), self.staff) for u, g in self.graphs.items()}
         self.findings = []
@@ -66,7 +68,7 @@ class Model:
         self._graph_map()
 
     def name(self, u):
-        return mask((self.flows.get(u) or {}).get("name") or u, self.staff)
+        return self._names[u] if u in self._names else mask(u, self.staff)
 
     def tag_label(self, u):
         return mask((((self.flows.get(u) or {}).get("tag") or {}).get("label") or "").strip())
