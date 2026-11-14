@@ -78,14 +78,36 @@ def _acyclic(nodes, edges, soft=()):
 def layout(sizes, edges, layer_of=None, soft=()):
     nodes = list(sizes)
     edges = list(dict.fromkeys((a, b) for a, b in edges if a != b and a in sizes and b in sizes))
-    forward, back = _acyclic(nodes, edges, soft)
-    fixed = dict(layer_of or {})
+    forward, _ = _acyclic(nodes, edges, soft)
+    layer = _layers(nodes, forward, dict(layer_of or {}))
+    # Edges whose target is not to the right (loops, or fixed layers) are drawn as reversed
+    draw = [(a, b) for a, b in edges if layer[b] > layer[a]]
+    rev = {(a, b) for a, b in edges if layer[b] <= layer[a]}
+    sizes, chain, nbr_up, nbr_down = _waypoints(sizes, draw, layer)
+    rows = _order(sizes, layer, nbr_up, nbr_down)
+    y = _heights(rows, sizes, nbr_up, nbr_down)
+    _close_gaps(y, sizes)
+    lx, widths, width = _columns(rows, sizes)
 
-    # Layers: longest path from the sources, with fixed layers taken as given
+    res = Layout()
+    res.layer = {u: layer[u] for u in nodes}
+    for u in nodes:
+        L = layer[u]
+        res.pos[u] = (lx[L] + (widths[L] - sizes[u][0]) / 2, y[u])
+    res.paths = _paths(res.pos, sizes, y, layer, chain, rev, lx, widths)
+    res.reversed = rev
+    res.width = width
+    res.height = max((y[u] + sizes[u][1] for u in y), default=0) + MARGIN
+    return res
+
+
+def _layers(nodes, forward, fixed):
+    """Each node's layer: one after the longest chain that leads to it, or as fixed by the caller."""
     preds = defaultdict(list)
     for a, b in forward:
         preds[b].append(a)
     layer = {}
+
     def assign(u, seen=()):
         if u in layer:
             return layer[u]
@@ -96,17 +118,13 @@ def layout(sizes, edges, layer_of=None, soft=()):
         return layer[u]
     for u in nodes:
         assign(u)
+    return layer
 
-    # Edges whose target is not to the right (loops, or fixed layers) are drawn as reversed
-    draw = []
-    rev = set()
-    for a, b in edges:
-        if layer[b] > layer[a]:
-            draw.append((a, b))
-        else:
-            rev.add((a, b))
 
-    # Waypoints for edges that span more than one layer
+def _waypoints(sizes, draw, layer):
+    """A waypoint in every layer a long edge crosses, so it runs in the gaps between nodes.
+    Returns (sizes with waypoints, edge -> chain of nodes, neighbours above, neighbours below);
+    waypoints are added to layer."""
     chain = {}
     sizes = dict(sizes)
     for a, b in draw:
@@ -122,11 +140,16 @@ def layout(sizes, edges, layer_of=None, soft=()):
         for x, y in zip(c, c[1:]):
             nbr_down[x].append(y)
             nbr_up[y].append(x)
+    return sizes, chain, nbr_up, nbr_down
 
-    # Order within layers: start from first-seen order, then barycentre sweeps
+
+def _order(sizes, layer, nbr_up, nbr_down):
+    """Nodes in each layer, ordered to reduce crossings: first-seen order, then barycentre sweeps,
+    keeping the order with the fewest crossings."""
     n_layers = max(layer.values(), default=0) + 1
     rows = [[] for _ in range(n_layers)]
     seen = set()
+
     def visit(u):
         if u in seen:
             return
@@ -153,6 +176,7 @@ def layout(sizes, edges, layer_of=None, soft=()):
         order = range(1, n_layers) if sweep % 2 == 0 else range(n_layers - 2, -1, -1)
         for L in order:
             nb = nbr_up if sweep % 2 == 0 else nbr_down
+
             def key(u):
                 ns = [at[v] for v in nb[u]]
                 return (sum(ns) / len(ns)) if ns else at[u]
@@ -161,15 +185,19 @@ def layout(sizes, edges, layer_of=None, soft=()):
         x = crossings()
         if x < best_x:
             best, best_x = [list(r) for r in rows], x
-    rows = best
+    return best
 
-    # Heights: stack each layer, then pull nodes towards their neighbours' centres
+
+def _heights(rows, sizes, nbr_up, nbr_down):
+    """Each node's top: stack each layer, then pull nodes towards their neighbours' centres
+    without letting them overlap."""
     y = {}
     for r in rows:
         top = 0
         for u in r:
             y[u] = top
             top += sizes[u][1] + GAP_Y
+
     def centre(u):
         return y[u] + sizes[u][1] / 2
     for it in range(30):
@@ -191,8 +219,12 @@ def layout(sizes, edges, layer_of=None, soft=()):
                 # move the block up as far as the wishes allow without breaking the spacing
                 for u in r:
                     y[u] += shift
-    # Close empty bands: where no real node sits at some height in any layer, pull everything
-    # below up, so long edges do not leave a hole in the middle of the picture
+    return y
+
+
+def _close_gaps(y, sizes):
+    """Where no real node sits at some height in any layer, pull everything below up, so long
+    edges do not leave a hole in the middle of the picture; then start at the margin."""
     real = sorted((y[u], y[u] + sizes[u][1]) for u in y if not isinstance(u, tuple))
     cuts, reach = [], None
     for top, bottom in real:
@@ -208,23 +240,28 @@ def layout(sizes, edges, layer_of=None, soft=()):
     for u in y:
         y[u] += MARGIN - low
 
-    # x: each layer as wide as its widest node
+
+def _columns(rows, sizes):
+    """Each layer's left edge and width (as wide as its widest node), and the total width."""
     widths = [max((sizes[u][0] for u in r), default=0) for r in rows]
     lx, acc = [], MARGIN
     for w in widths:
         lx.append(acc)
         acc += w + GAP_X
-    res = Layout()
-    res.layer = {u: layer[u] for u in nodes}
-    for u in nodes:
-        L = layer[u]
-        res.pos[u] = (lx[L] + (widths[L] - sizes[u][0]) / 2, y[u])
+    return lx, widths, acc - GAP_X + MARGIN
 
-    # Ports: spread several edges leaving or entering one node over its height
+
+def _paths(pos, sizes, y, layer, chain, rev, lx, widths):
+    """Each edge as points from its source's right side, through its waypoints, to its target's
+    left side; several edges at one node are spread over its height. Reversed edges get their
+    two end points only."""
+    def centre(u):
+        return y[u] + sizes[u][1] / 2
     outs, ins = defaultdict(list), defaultdict(list)
     for (a, b), c in chain.items():
         outs[a].append(((a, b), centre(c[1])))
         ins[b].append(((a, b), centre(c[-2])))
+
     def ports(group, node):
         h = sizes[node][1]
         items = sorted(group, key=lambda t: t[1])
@@ -234,20 +271,18 @@ def layout(sizes, edges, layer_of=None, soft=()):
     out_y = {e: v for u, g in outs.items() for e, v in ports(g, u).items()}
     in_y = {e: v for u, g in ins.items() for e, v in ports(g, u).items()}
 
+    paths = {}
     for (a, b), c in chain.items():
-        ax, ay = res.pos[a]
-        bx, by = res.pos[b]
+        ax, ay = pos[a]
+        bx, by = pos[b]
         pts = [(ax + sizes[a][0], out_y[(a, b)])]
         for d in c[1:-1]:
             L = layer[d]
             pts += [(lx[L], centre(d)), (lx[L] + widths[L], centre(d))]
         pts.append((bx, in_y[(a, b)]))
-        res.paths[(a, b)] = pts
+        paths[(a, b)] = pts
     for a, b in rev:
-        ax, ay = res.pos[a]
-        bx, by = res.pos[b]
-        res.paths[(a, b)] = [(ax + sizes[a][0] / 2, ay + sizes[a][1]), (bx + sizes[b][0] / 2, by + sizes[b][1])]
-    res.reversed = rev
-    res.width = acc - GAP_X + MARGIN
-    res.height = max((y[u] + sizes[u][1] for u in y), default=0) + MARGIN
-    return res
+        ax, ay = pos[a]
+        bx, by = pos[b]
+        paths[(a, b)] = [(ax + sizes[a][0] / 2, ay + sizes[a][1]), (bx + sizes[b][0] / 2, by + sizes[b][1])]
+    return paths
