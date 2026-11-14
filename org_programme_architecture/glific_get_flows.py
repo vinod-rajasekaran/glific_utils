@@ -6,7 +6,7 @@ Usage (put the variables in the repo-root .env, see .env.example, or export them
   export GLIFIC_PHONE=91XXXXXXXXXX
   export GLIFIC_PASSWORD=secret
   python3 glific_get_flows.py --redact old/flows.json   # blank credentials in an earlier export
-  python3 glific_get_flows.py   # writes output/get_system_flow_architecture/<YYYY-MM-DD_HH-MM-SS>/flows.json
+  python3 glific_get_flows.py   # writes output/org_programme_architecture/<YYYY-MM-DD_HH-MM-SS>/flows.json
 """
 import json
 import os
@@ -22,7 +22,7 @@ PAGE_SIZE = 100
 
 # Each run writes to its own folder, output/<feature>/<YYYY-MM-DD_HH-MM-SS>/ at the repo root
 # (git-ignored), so earlier results are never overwritten.
-FEATURE = "get_system_flow_architecture"
+FEATURE = "org_programme_architecture"
 OUTPUT_ROOT = Path(__file__).resolve().parent.parent / "output" / FEATURE
 _run_dir = None
 
@@ -32,9 +32,10 @@ def run_dir():
     global _run_dir
     if _run_dir is None:
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        candidate, n = OUTPUT_ROOT / stamp, 2
+        root = Path(os.environ.get("GLIFIC_OUTPUT_ROOT") or OUTPUT_ROOT)   # override used by the tests
+        candidate, n = root / stamp, 2
         while candidate.exists():          # two runs in the same second
-            candidate, n = OUTPUT_ROOT / f"{stamp}-{n}", n + 1
+            candidate, n = root / f"{stamp}-{n}", n + 1
         candidate.mkdir(parents=True)
         _run_dir = candidate
     return _run_dir
@@ -42,7 +43,7 @@ def run_dir():
 
 def load_env(path=Path(__file__).resolve().parent.parent / ".env"):
     """Load KEY=VALUE lines from the repo-root .env, if present. Shell variables win."""
-    if not path.is_file():
+    if not path.is_file() or os.environ.get("GLIFIC_NO_DOTENV"):
         return
     for line in path.read_text().splitlines():
         line = line.strip()
@@ -53,7 +54,8 @@ def load_env(path=Path(__file__).resolve().parent.parent / ".env"):
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]  # drop one pair of matching surrounding quotes only
-        os.environ.setdefault(key, value)
+        if value:   # an empty line in .env must not mask credentials set elsewhere
+            os.environ.setdefault(key, value)
 
 
 load_env()
@@ -223,6 +225,16 @@ def redact_nodes(nodes):
     return count + n
 
 
+def redact_definition(definition):
+    """Blank credentials in a flow definition: webhook details in its nodes, and tokens anywhere,
+    including the editor's sticky notes in _ui. Returns the count."""
+    count = redact_nodes(definition.get("nodes") or [])
+    if isinstance(definition.get("_ui"), dict):
+        definition["_ui"], n = _scrub(definition["_ui"])
+        count += n
+    return count
+
+
 def get_graph(flow, token):
     result = post("/api", {"query": EXPORT_QUERY, "variables": {"id": flow["id"]}}, token)
     payload = (result.get("data") or {}).get("exportFlow") or {}
@@ -235,8 +247,8 @@ def get_graph(flow, token):
         export = json.loads(export)
     definition = find_definition(export, flow["uuid"]) or {}
 
+    redacted = redact_definition(definition)
     nodes = definition.get("nodes", [])
-    redacted = redact_nodes(nodes)
     if redacted:
         print(f"  {flow['name']}: blanked {redacted} credential value(s)", file=sys.stderr)
     # Edges: each node exit points to a destination node (None = flow ends there)
@@ -258,7 +270,7 @@ def fetch_flows(token):
     for label, n in tag_counts.most_common():
         print(f"  {label}: {n}", file=sys.stderr)
 
-    all_flows = active_flows  # every active flow; the flow map narrows by tag later
+    all_flows = active_flows  # every active flow
     print(f"Pulling all {len(all_flows)} active flows\n", file=sys.stderr)
 
     for flow in all_flows:
@@ -271,7 +283,12 @@ def fetch_flows(token):
 def redact_file(path):
     """Blank credentials in a flows.json saved earlier, rewriting it in place."""
     flows = json.loads(Path(path).read_text())
-    total = sum(redact_nodes(f.get("nodes") or []) for f in flows)
+    total = 0
+    for f in flows:
+        total += redact_nodes(f.get("nodes") or [])
+        if isinstance(f.get("ui"), dict):
+            f["ui"], n = _scrub(f["ui"])
+            total += n
     Path(path).write_text(json.dumps(flows, indent=2))
     print(f"Blanked {total} credential value(s) in {path}", file=sys.stderr)
 

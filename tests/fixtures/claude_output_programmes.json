@@ -1,0 +1,315 @@
+{
+ "org_summary": {
+  "text": "A demo maternal health bot that welcomes mothers, records their stage, sends weekly tips and answers questions, plus a small survey.",
+  "evidence": [
+   "msg:00000000-0000-4000-8000-000000000001:1",
+   "msg:00000000-0000-4000-8000-000000000003:1"
+  ],
+  "confidence": "likely"
+ },
+ "use_cases": [
+  {
+   "id": "weekly-tips",
+   "name": "Weekly pregnancy tips",
+   "summary": "Mothers join, give their month of pregnancy, and get a weekly tip for their stage. <script>alert(1)</script>",
+   "kind": "journey",
+   "flows": [
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+    "00000000-0000-4000-8000-000000000003",
+    "00000000-0000-4000-8000-000000000004",
+    "00000000-0000-4000-8000-999999999999"
+   ],
+   "story": [
+    {
+     "text": "A mother sends hi and is welcomed.",
+     "refs": [
+      "00000000-0000-4000-8000-000000000001"
+     ],
+     "evidence": [
+      "msg:00000000-0000-4000-8000-000000000001:1"
+     ],
+     "confidence": "clear"
+    },
+    {
+     "text": "She is asked which month of pregnancy she is in.",
+     "refs": [
+      "00000000-0000-4000-8000-000000000002"
+     ],
+     "evidence": [
+      "msg:00000000-0000-4000-8000-000000000002:1"
+     ],
+     "confidence": "clear"
+    },
+    {
+     "text": "Every Wednesday she gets a tip for early or late pregnancy.",
+     "refs": [
+      "00000000-0000-4000-8000-000000000003",
+      "trigger:501"
+     ],
+     "evidence": [
+      "trigger:501",
+      "msg:00000000-0000-4000-8000-000000000003:1"
+     ],
+     "confidence": "clear"
+    },
+    {
+     "text": "This statement cites nothing that exists.",
+     "refs": [
+      "00000000-0000-4000-8000-000000000003"
+     ],
+     "evidence": [
+      "msg:nope:1"
+     ],
+     "confidence": "clear"
+    }
+   ],
+   "how_it_works": [
+    {
+     "text": "Profile adds the mother to Members, the group the weekly schedule sends to.",
+     "refs": [
+      "00000000-0000-4000-8000-000000000002",
+      "group:Members"
+     ],
+     "evidence": [
+      "group:Members",
+      "edge:00000000-0000-4000-8000-000000000002:group:Members:adds"
+     ],
+     "confidence": "clear"
+    }
+   ],
+   "watch": [
+    {
+     "text": "A test copy reads the live stage field.",
+     "refs": [
+      "00000000-0000-4000-8000-000000000005"
+     ],
+     "evidence": [
+      "edge:00000000-0000-4000-8000-000000000002:00000000-0000-4000-8000-000000000005:data"
+     ],
+     "confidence": "likely"
+    }
+   ],
+   "confidence": "clear"
+  },
+  {
+   "id": "survey",
+   "name": "Survey",
+   "summary": "Contacts answer a survey; answers go to a sheet and staff are alerted.",
+   "kind": "journey",
+   "flows": [
+    "00000000-0000-4000-8000-000000000006",
+    "00000000-0000-4000-8000-000000000007",
+    "00000000-0000-4000-8000-000000000002"
+   ],
+   "story": [
+    {
+     "text": "A contact sends survey and is thanked.",
+     "refs": [
+      "00000000-0000-4000-8000-000000000006"
+     ],
+     "evidence": [
+      "msg:00000000-0000-4000-8000-000000000006:1"
+     ],
+     "confidence": "clear"
+    }
+   ],
+   "how_it_works": [],
+   "watch": [],
+   "confidence": "likely"
+  },
+  {
+   "id": "ghost",
+   "name": "Ghost",
+   "summary": "Only unknown flows.",
+   "kind": "admin",
+   "flows": [
+    "not-a-flow"
+   ],
+   "story": [],
+   "how_it_works": [],
+   "watch": [],
+   "confidence": "guess"
+  },
+  {
+   "id": "tests",
+   "name": "Tests and leftovers",
+   "summary": "Copies and drafts.",
+   "kind": "tests",
+   "flows": [
+    "00000000-0000-4000-8000-000000000005"
+   ],
+   "story": [],
+   "how_it_works": [],
+   "watch": [],
+   "confidence": "likely"
+  }
+ ],
+ "flows": [
+  {
+   "id": "00000000-0000-4000-8000-000000000001",
+   "purpose": "Welcomes a new contact and starts the profile.",
+   "role": "core",
+   "use_case": "weekly-tips",
+   "evidence": [
+    "msg:00000000-0000-4000-8000-000000000001:1"
+   ],
+   "confidence": "clear"
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000002",
+   "purpose": "Records the month of pregnancy and adds the mother to Members.",
+   "role": "core",
+   "use_case": "weekly-tips",
+   "evidence": [
+    "msg:00000000-0000-4000-8000-000000000002:1"
+   ],
+   "confidence": "clear"
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000003",
+   "purpose": "Sends the weekly tip for the mother's stage.",
+   "role": "core",
+   "use_case": "weekly-tips",
+   "evidence": [
+    "msg:00000000-0000-4000-8000-000000000003:1"
+   ],
+   "confidence": "clear"
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000004",
+   "purpose": "Answers a question through an outside service.",
+   "role": "shared",
+   "use_case": "weekly-tips",
+   "evidence": [
+    "msg:00000000-0000-4000-8000-000000000004:1"
+   ],
+   "confidence": "likely"
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000005",
+   "purpose": "Test copy of the AI flow.",
+   "role": "test",
+   "use_case": "tests",
+   "evidence": [
+    "msg:00000000-0000-4000-8000-000000000005:1"
+   ],
+   "confidence": "clear"
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000006",
+   "purpose": "Starts the survey.",
+   "role": "core",
+   "use_case": "survey",
+   "evidence": [
+    "msg:00000000-0000-4000-8000-000000000006:1"
+   ],
+   "confidence": "clear"
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000007",
+   "purpose": "Saves answers and alerts staff.",
+   "role": "helper",
+   "use_case": "survey",
+   "evidence": [
+    "tpl:00000000-0000-4000-8000-000000000007:1"
+   ],
+   "confidence": "clear"
+  },
+  {
+   "id": "Survey save",
+   "purpose": "Named instead of an ID.",
+   "role": "helper",
+   "use_case": "survey",
+   "evidence": [],
+   "confidence": "guess"
+  }
+ ],
+ "edges": [
+  {
+   "id": "edge:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000002:start",
+   "meaning": "welcomes, then asks for the stage"
+  },
+  {
+   "id": "edge:made:up:start",
+   "meaning": "invented"
+  }
+ ],
+ "systems": [
+  {
+   "host": "api.example.org",
+   "name": "Question answering service",
+   "confidence": "likely"
+  },
+  {
+   "host": "evil.example.com",
+   "name": "Invented",
+   "confidence": "guess"
+  }
+ ],
+ "programmes": [
+  {
+   "id": "healthy-families",
+   "name": "Healthy families programme",
+   "summary": "Everything a mother meets: joining, weekly tips, questions and the survey.",
+   "kind": "journey",
+   "parts": [
+    "weekly-tips",
+    "survey",
+    "not-a-use-case"
+   ],
+   "story": [
+    {
+     "text": "A mother joins, then gets weekly tips and can ask questions.",
+     "refs": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000003"
+     ],
+     "evidence": [
+      "msg:00000000-0000-4000-8000-000000000001:1",
+      "msg:00000000-0000-4000-8000-000000000003:1"
+     ],
+     "confidence": "likely"
+    }
+   ],
+   "watch": [
+    {
+     "text": "The survey staff alert goes to one person.",
+     "refs": [
+      "00000000-0000-4000-8000-000000000007"
+     ],
+     "evidence": [
+      "tpl:00000000-0000-4000-8000-000000000007:1"
+     ],
+     "confidence": "likely"
+    }
+   ],
+   "confidence": "likely"
+  },
+  {
+   "id": "tests",
+   "name": "Tests and leftovers",
+   "summary": "Copies and drafts.",
+   "kind": "tests",
+   "parts": [
+    "tests",
+    "survey"
+   ],
+   "story": [],
+   "watch": [],
+   "confidence": "likely"
+  },
+  {
+   "id": "empty",
+   "name": "Empty",
+   "summary": "Nothing real.",
+   "kind": "admin",
+   "parts": [
+    "nope"
+   ],
+   "story": [],
+   "watch": [],
+   "confidence": "guess"
+  }
+ ]
+}

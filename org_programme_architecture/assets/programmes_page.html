@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>$title</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@500;700&display=swap" rel="stylesheet">
+<style>$css</style>
+</head>
+<body>
+<div class="page">
+<header>
+  <h1>$h1</h1>
+  <p class="lede">$lede</p>
+</header>
+<main>
+<section id="home">
+$org
+<h2 style="margin:26px 0 6px">What the bot does</h2>
+<p class="muted">$reading</p>
+<div class="uccards">$cards</div>
+$shared
+</section>
+$not_placed
+$dropped
+$views
+</main>
+<footer>$footer</footer>
+</div>
+<script>
+(function(){
+  var ucOf=$uc_of;
+  var home=document.getElementById('home');
+  var extras=[].slice.call(document.querySelectorAll('main > section.sect'));
+  function show(){
+    var h=location.hash.slice(1),view=h&&document.getElementById(h);
+    var isView=!!(view&&view.classList.contains('ucview'));
+    home.hidden=isView;extras.forEach(function(s){s.hidden=isView;});
+    document.querySelectorAll('.ucview').forEach(function(v){v.hidden=(v!==view);});
+    setTimeout(function(){window.scrollTo(0,0);},0);   // undo the browser's jump to the anchor
+  }
+  window.addEventListener('hashchange',show);
+  window.addEventListener('load',function(){if(location.hash)setTimeout(function(){window.scrollTo(0,0);},0);});
+  document.addEventListener('click',function(ev){
+    var b=ev.target.closest('button.conf');
+    if(b){var e=b.parentNode.querySelector('.ev');if(e){e.hidden=!e.hidden;b.setAttribute('aria-expanded',String(!e.hidden));}}
+  });
+  document.querySelectorAll('.ucview').forEach(function(view){
+    var ns=view.id.slice(3)+'-',svg=view.querySelector('svg.fgraph'),pane=view.querySelector('.pane'),body=pane.querySelector('.pane-body');
+    var back=pane.querySelector('.pane-back'),storyTpl=pane.querySelector('.story-tpl'),sel=null;
+    var nodes={};svg.querySelectorAll('.node').forEach(function(n){nodes[n.getAttribute('data-id')]=n;});
+    var wires=[].slice.call(svg.querySelectorAll('.edge'));
+    function light(id){
+      var near={};near[id]=1;
+      wires.forEach(function(w){var a=w.getAttribute('data-from'),b=w.getAttribute('data-to');if(a===id)near[b]=1;if(b===id)near[a]=1;});
+      Object.keys(nodes).forEach(function(k){nodes[k].classList.toggle('dim',!near[k]);});
+      wires.forEach(function(w){var hot=w.getAttribute('data-from')===id||w.getAttribute('data-to')===id;w.classList.toggle('hot',hot);w.classList.toggle('dim',!hot);});
+    }
+    function clear(){
+      if(sel){light(sel);return;}
+      Object.keys(nodes).forEach(function(k){nodes[k].classList.remove('dim');});
+      wires.forEach(function(w){w.classList.remove('hot','dim');});
+    }
+    function story(){
+      if(sel&&nodes[sel])nodes[sel].classList.remove('sel');
+      sel=null;body.innerHTML='';body.appendChild(storyTpl.content.cloneNode(true));back.hidden=true;clear();
+    }
+    function open(id){
+      var n=nodes[id],key=id.slice(ns.length);
+      if(n&&n.classList.contains('faded')&&ucOf[key]){location.hash='uc-'+ucOf[key];return;}
+      var tpl=document.getElementById('pane-'+id)||document.getElementById('tpl-'+id);if(!tpl)return;
+      if(sel&&nodes[sel])nodes[sel].classList.remove('sel');
+      sel=id;if(n)n.classList.add('sel');
+      body.innerHTML='';body.appendChild(tpl.content.cloneNode(true));back.hidden=false;light(id);pane.scrollTop=0;
+    }
+    Object.keys(nodes).forEach(function(id){
+      var n=nodes[id];
+      n.addEventListener('mouseenter',function(){light(id);});
+      n.addEventListener('mouseleave',clear);
+      n.addEventListener('focus',function(){light(id);});
+      n.addEventListener('blur',clear);
+      n.addEventListener('click',function(){open(id);});
+      n.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();open(id);}});
+    });
+    back.addEventListener('click',story);
+    view.addEventListener('keydown',function(ev){if(ev.key==='Escape'&&sel)story();});
+  });
+  show();
+})();
+</script>
+</body>
+</html>

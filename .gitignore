@@ -182,3 +182,4 @@ cython_debug/
 # Script output (exported flows/triggers may contain sensitive data)
 output/*
 !output/.gitkeep
+.superpowers/

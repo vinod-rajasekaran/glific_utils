@@ -1,0 +1,387 @@
+{
+ "edges": [
+  {
+   "from": "trigger:501",
+   "id": "edge:trigger:501:00000000-0000-4000-8000-000000000003:start",
+   "kind": "start",
+   "to": "00000000-0000-4000-8000-000000000003"
+  },
+  {
+   "from": "group:Members",
+   "id": "edge:group:Members:trigger:501:schedule",
+   "kind": "schedule",
+   "to": "trigger:501"
+  },
+  {
+   "from": "00000000-0000-4000-8000-000000000002",
+   "id": "edge:00000000-0000-4000-8000-000000000002:00000000-0000-4000-8000-000000000005:data",
+   "kind": "data",
+   "to": "00000000-0000-4000-8000-000000000005"
+  },
+  {
+   "from": "00000000-0000-4000-8000-000000000002",
+   "id": "edge:00000000-0000-4000-8000-000000000002:00000000-0000-4000-8000-000000000003:data",
+   "kind": "data",
+   "to": "00000000-0000-4000-8000-000000000003"
+  },
+  {
+   "from": "00000000-0000-4000-8000-000000000002",
+   "id": "edge:00000000-0000-4000-8000-000000000002:group:Members:adds",
+   "kind": "adds",
+   "to": "group:Members"
+  },
+  {
+   "from": "00000000-0000-4000-8000-000000000006",
+   "id": "edge:00000000-0000-4000-8000-000000000006:00000000-0000-4000-8000-000000000007:start",
+   "kind": "start",
+   "to": "00000000-0000-4000-8000-000000000007"
+  },
+  {
+   "from": "00000000-0000-4000-8000-000000000003",
+   "id": "edge:00000000-0000-4000-8000-000000000003:00000000-0000-4000-8000-000000000004:start",
+   "kind": "start",
+   "to": "00000000-0000-4000-8000-000000000004"
+  },
+  {
+   "from": "00000000-0000-4000-8000-000000000001",
+   "id": "edge:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000002:start",
+   "kind": "start",
+   "to": "00000000-0000-4000-8000-000000000002"
+  }
+ ],
+ "findings": [],
+ "flows": [
+  {
+   "earlier_triggers": 0,
+   "excerpts": [
+    {
+     "id": "msg:00000000-0000-4000-8000-000000000004:1",
+     "kind": "message",
+     "text": "Ask me any question about your health."
+    },
+    {
+     "id": "msg:00000000-0000-4000-8000-000000000004:2",
+     "kind": "message",
+     "text": "@results.answer"
+    }
+   ],
+   "id": "00000000-0000-4000-8000-000000000004",
+   "keywords": [],
+   "leads_to": [],
+   "name": "Ask AI",
+   "routes": [],
+   "starts_from": [
+    {
+     "kind": "flow",
+     "ref": "00000000-0000-4000-8000-000000000003",
+     "text": "Weekly tip enters it"
+    }
+   ],
+   "tag": "Demo",
+   "touches": [
+    "calls api.example.org (answer) for answer"
+   ],
+   "unreachable": []
+  },
+  {
+   "earlier_triggers": 0,
+   "excerpts": [
+    {
+     "id": "msg:00000000-0000-4000-8000-000000000005:1",
+     "kind": "message",
+     "text": "Test copy of the AI flow."
+    }
+   ],
+   "id": "00000000-0000-4000-8000-000000000005",
+   "keywords": [
+    "test"
+   ],
+   "leads_to": [],
+   "name": "Ask AI copy",
+   "routes": [
+    "branches on stage (Early or Late)"
+   ],
+   "starts_from": [
+    {
+     "kind": "keyword",
+     "ref": "",
+     "text": "a contact sends test"
+    }
+   ],
+   "tag": "Testing",
+   "touches": [],
+   "unreachable": []
+  },
+  {
+   "earlier_triggers": 0,
+   "excerpts": [
+    {
+     "id": "msg:00000000-0000-4000-8000-000000000008:1",
+     "kind": "message",
+     "text": "Draft message that is no longer used."
+    }
+   ],
+   "id": "00000000-0000-4000-8000-000000000008",
+   "keywords": [],
+   "leads_to": [],
+   "name": "Old draft",
+   "routes": [],
+   "starts_from": [
+    {
+     "kind": "setting",
+     "ref": "",
+     "text": "Default flow: runs on any incoming message that matches no keyword"
+    }
+   ],
+   "tag": "",
+   "touches": [],
+   "unreachable": []
+  },
+  {
+   "earlier_triggers": 0,
+   "excerpts": [
+    {
+     "id": "msg:00000000-0000-4000-8000-000000000002:1",
+     "kind": "message",
+     "text": "Which month of pregnancy are you in?"
+    }
+   ],
+   "id": "00000000-0000-4000-8000-000000000002",
+   "keywords": [],
+   "leads_to": [
+    {
+     "kind": "data",
+     "ref": "00000000-0000-4000-8000-000000000005",
+     "text": "sets stage, which Ask AI copy reads"
+    },
+    {
+     "kind": "data",
+     "ref": "00000000-0000-4000-8000-000000000003",
+     "text": "sets stage, which Weekly tip reads"
+    },
+    {
+     "kind": "group",
+     "ref": "group:Members",
+     "text": "adds contacts to Members"
+    }
+   ],
+   "name": "Profile",
+   "routes": [],
+   "starts_from": [
+    {
+     "kind": "flow",
+     "ref": "00000000-0000-4000-8000-000000000001",
+     "text": "Welcome enters it"
+    }
+   ],
+   "tag": "Demo",
+   "touches": [
+    "sets fields stage"
+   ],
+   "unreachable": []
+  },
+  {
+   "earlier_triggers": 0,
+   "excerpts": [
+    {
+     "id": "sticky:00000000-0000-4000-8000-000000000007:1",
+     "kind": "sticky",
+     "text": "Note If the sheet fails call [number] or mail [email]"
+    },
+    {
+     "id": "tpl:00000000-0000-4000-8000-000000000007:1",
+     "kind": "template",
+     "text": "staff alert template survey_alert"
+    }
+   ],
+   "id": "00000000-0000-4000-8000-000000000007",
+   "keywords": [],
+   "leads_to": [],
+   "name": "Survey save",
+   "routes": [],
+   "starts_from": [
+    {
+     "kind": "flow",
+     "ref": "00000000-0000-4000-8000-000000000006",
+     "text": "Survey start enters it"
+    }
+   ],
+   "tag": "",
+   "touches": [
+    "writes Responses, Sheet1 tab",
+    "staff alert: template survey_alert to 1 staff contact"
+   ],
+   "unreachable": []
+  },
+  {
+   "earlier_triggers": 0,
+   "excerpts": [
+    {
+     "id": "msg:00000000-0000-4000-8000-000000000006:1",
+     "kind": "message",
+     "text": "Thank you for helping with our survey."
+    }
+   ],
+   "id": "00000000-0000-4000-8000-000000000006",
+   "keywords": [
+    "survey"
+   ],
+   "leads_to": [
+    {
+     "kind": "flow",
+     "ref": "00000000-0000-4000-8000-000000000007",
+     "text": "enters Survey save"
+    }
+   ],
+   "name": "Survey start",
+   "routes": [],
+   "starts_from": [
+    {
+     "kind": "keyword",
+     "ref": "",
+     "text": "a contact sends survey"
+    }
+   ],
+   "tag": "",
+   "touches": [],
+   "unreachable": []
+  },
+  {
+   "earlier_triggers": 1,
+   "excerpts": [
+    {
+     "id": "msg:00000000-0000-4000-8000-000000000003:1",
+     "kind": "message",
+     "text": "Tip for early pregnancy: rest well and drink water."
+    },
+    {
+     "id": "msg:00000000-0000-4000-8000-000000000003:2",
+     "kind": "message",
+     "text": "नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो ग…"
+    },
+    {
+     "id": "msg:00000000-0000-4000-8000-000000000003:3",
+     "kind": "message",
+     "text": "Tip for late pregnancy: pack your hospital bag."
+    }
+   ],
+   "id": "00000000-0000-4000-8000-000000000003",
+   "keywords": [],
+   "leads_to": [
+    {
+     "kind": "flow",
+     "ref": "00000000-0000-4000-8000-000000000004",
+     "text": "enters Ask AI"
+    }
+   ],
+   "name": "Weekly tip",
+   "routes": [
+    "branches on stage (Early or Late)"
+   ],
+   "starts_from": [
+    {
+     "kind": "trigger",
+     "ref": "trigger:501",
+     "text": "Every Wednesday at 15:00 (09:30 UTC), to Members"
+    }
+   ],
+   "tag": "Demo",
+   "touches": [],
+   "unreachable": []
+  },
+  {
+   "earlier_triggers": 0,
+   "excerpts": [
+    {
+     "id": "msg:00000000-0000-4000-8000-000000000001:1",
+     "kind": "message",
+     "text": "Welcome to the Healthy Families service. Reply 1 to join."
+    }
+   ],
+   "id": "00000000-0000-4000-8000-000000000001",
+   "keywords": [
+    "hi",
+    "hello"
+   ],
+   "leads_to": [
+    {
+     "kind": "flow",
+     "ref": "00000000-0000-4000-8000-000000000002",
+     "text": "enters Profile"
+    }
+   ],
+   "name": "Welcome",
+   "routes": [],
+   "starts_from": [
+    {
+     "kind": "setting",
+     "ref": "",
+     "text": "New contact flow: runs on the first message from a new contact"
+    },
+    {
+     "kind": "keyword",
+     "ref": "",
+     "text": "a contact sends hi or hello"
+    }
+   ],
+   "tag": "Demo",
+   "touches": [],
+   "unreachable": []
+  }
+ ],
+ "groups": [
+  {
+   "added_by": [
+    "00000000-0000-4000-8000-000000000002"
+   ],
+   "checked_by": [],
+   "id": "group:Members",
+   "name": "Members",
+   "removed_by": [],
+   "triggers": [
+    "trigger:501"
+   ]
+  },
+  {
+   "added_by": [],
+   "checked_by": [],
+   "id": "group:Old cohort",
+   "name": "Old cohort",
+   "removed_by": [],
+   "triggers": []
+  },
+  {
+   "added_by": [],
+   "checked_by": [
+    "00000000-0000-4000-8000-000000000001"
+   ],
+   "id": "group:Staff",
+   "name": "Staff",
+   "removed_by": [],
+   "triggers": []
+  }
+ ],
+ "hosts": [
+  "api.example.org"
+ ],
+ "triggers": [
+  {
+   "active": false,
+   "flow": "00000000-0000-4000-8000-000000000003",
+   "groups": [
+    "Old cohort"
+   ],
+   "id": "trigger:502",
+   "schedule": "Once on 5 Jan 2026 at 15:00 (09:30 UTC)"
+  },
+  {
+   "active": true,
+   "flow": "00000000-0000-4000-8000-000000000003",
+   "groups": [
+    "Members"
+   ],
+   "id": "trigger:501",
+   "schedule": "Every Wednesday at 15:00 (09:30 UTC)"
+  }
+ ]
+}

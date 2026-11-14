@@ -1,0 +1,642 @@
+[
+ {
+  "uuid": "00000000-0000-4000-8000-000000000001",
+  "id": "001",
+  "name": "Welcome",
+  "keywords": [
+   "hi",
+   "hello"
+  ],
+  "isActive": true,
+  "tag": {
+   "label": "Demo"
+  },
+  "versionNumber": "13.2.0",
+  "lastPublishedAt": "2026-10-01T00:00:00Z",
+  "lastChangedAt": "2026-10-01T00:00:00Z",
+  "flowType": "MESSAGE",
+  "edges": [],
+  "nodes": [
+   {
+    "uuid": "wel-n0",
+    "actions": [
+     {
+      "type": "send_msg",
+      "uuid": "wel-a1",
+      "text": "Welcome to the Healthy Families service. Reply 1 to join.",
+      "quick_replies": [],
+      "attachments": [],
+      "labels": [],
+      "all_urns": false
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "wel-e0",
+      "destination_uuid": "wel-n1"
+     }
+    ],
+    "router": {
+     "type": "switch",
+     "operand": "@contact.groups",
+     "categories": [
+      {
+       "uuid": "sc1",
+       "name": "Staff",
+       "exit_uuid": "wel-e0"
+      }
+     ],
+     "cases": [
+      {
+       "uuid": "sk1",
+       "type": "has_group",
+       "arguments": [
+        "g9",
+        "Staff"
+       ],
+       "category_uuid": "sc1"
+      }
+     ]
+    }
+   },
+   {
+    "uuid": "wel-n1",
+    "actions": [
+     {
+      "type": "enter_flow",
+      "uuid": "wel-a2",
+      "flow": {
+       "uuid": "00000000-0000-4000-8000-000000000002",
+       "name": "Profile"
+      }
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "wel-e1",
+      "destination_uuid": null
+     }
+    ]
+   }
+  ],
+  "ui": {
+   "stickies": {}
+  }
+ },
+ {
+  "uuid": "00000000-0000-4000-8000-000000000002",
+  "id": "002",
+  "name": "Profile",
+  "keywords": [],
+  "isActive": true,
+  "tag": {
+   "label": "Demo"
+  },
+  "versionNumber": "13.2.0",
+  "lastPublishedAt": "2026-10-01T00:00:00Z",
+  "lastChangedAt": "2026-10-01T00:00:00Z",
+  "flowType": "MESSAGE",
+  "edges": [],
+  "nodes": [
+   {
+    "uuid": "pro-n0",
+    "actions": [
+     {
+      "type": "send_msg",
+      "uuid": "pro-a1",
+      "text": "Which month of pregnancy are you in?",
+      "quick_replies": [],
+      "attachments": [],
+      "labels": [],
+      "all_urns": false
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "pro-e0",
+      "destination_uuid": "pro-n1"
+     }
+    ]
+   },
+   {
+    "uuid": "pro-n1",
+    "actions": [
+     {
+      "type": "set_contact_field",
+      "uuid": "pro-a2",
+      "field": {
+       "key": "stage",
+       "name": "stage"
+      },
+      "value": "@results.month"
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "pro-e1",
+      "destination_uuid": "pro-n2"
+     }
+    ]
+   },
+   {
+    "uuid": "pro-n2",
+    "actions": [
+     {
+      "type": "add_contact_groups",
+      "uuid": "pro-a3",
+      "groups": [
+       {
+        "uuid": "g1",
+        "name": "Members"
+       }
+      ]
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "pro-e2",
+      "destination_uuid": null
+     }
+    ]
+   }
+  ],
+  "ui": {
+   "stickies": {}
+  }
+ },
+ {
+  "uuid": "00000000-0000-4000-8000-000000000003",
+  "id": "003",
+  "name": "Weekly tip",
+  "keywords": [],
+  "isActive": true,
+  "tag": {
+   "label": "Demo"
+  },
+  "versionNumber": "13.2.0",
+  "lastPublishedAt": "2026-10-01T00:00:00Z",
+  "lastChangedAt": "2026-10-01T00:00:00Z",
+  "flowType": "MESSAGE",
+  "edges": [],
+  "nodes": [
+   {
+    "uuid": "tip-n0",
+    "actions": [],
+    "exits": [
+     {
+      "uuid": "rx1",
+      "destination_uuid": "tip-n1"
+     },
+     {
+      "uuid": "rx2",
+      "destination_uuid": "tip-n2"
+     }
+    ],
+    "router": {
+     "type": "switch",
+     "operand": "@fields.stage",
+     "categories": [
+      {
+       "uuid": "c1",
+       "name": "Early",
+       "exit_uuid": "rx1"
+      },
+      {
+       "uuid": "c2",
+       "name": "Late",
+       "exit_uuid": "rx2"
+      }
+     ],
+     "cases": [
+      {
+       "uuid": "k1",
+       "type": "has_any_word",
+       "arguments": [
+        "early"
+       ],
+       "category_uuid": "c1"
+      },
+      {
+       "uuid": "k2",
+       "type": "has_any_word",
+       "arguments": [
+        "late"
+       ],
+       "category_uuid": "c2"
+      }
+     ]
+    }
+   },
+   {
+    "uuid": "tip-n1",
+    "actions": [
+     {
+      "type": "send_msg",
+      "uuid": "tip-a1",
+      "text": "Tip for early pregnancy: rest well and drink water.",
+      "quick_replies": [],
+      "attachments": [],
+      "labels": [],
+      "all_urns": false
+     },
+     {
+      "type": "send_msg",
+      "uuid": "tip-a1b",
+      "text": "नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानकारी देता है। नमस्ते, यह एक लंबा संदेश है जो गर्भावस्था के हर सप्ताह के बारे में जानका",
+      "quick_replies": [],
+      "attachments": [],
+      "labels": [],
+      "all_urns": false
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "tip-e1",
+      "destination_uuid": "tip-n3"
+     }
+    ]
+   },
+   {
+    "uuid": "tip-n2",
+    "actions": [
+     {
+      "type": "send_msg",
+      "uuid": "tip-a2",
+      "text": "Tip for late pregnancy: pack your hospital bag.",
+      "quick_replies": [],
+      "attachments": [],
+      "labels": [],
+      "all_urns": false
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "tip-e2",
+      "destination_uuid": "tip-n3"
+     }
+    ]
+   },
+   {
+    "uuid": "tip-n3",
+    "actions": [
+     {
+      "type": "enter_flow",
+      "uuid": "tip-a3",
+      "flow": {
+       "uuid": "00000000-0000-4000-8000-000000000004",
+       "name": "Ask AI"
+      }
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "tip-n3-x",
+      "destination_uuid": null
+     }
+    ]
+   }
+  ],
+  "ui": {
+   "stickies": {}
+  }
+ },
+ {
+  "uuid": "00000000-0000-4000-8000-000000000004",
+  "id": "004",
+  "name": "Ask AI",
+  "keywords": [],
+  "isActive": true,
+  "tag": {
+   "label": "Demo"
+  },
+  "versionNumber": "13.2.0",
+  "lastPublishedAt": "2026-10-01T00:00:00Z",
+  "lastChangedAt": "2026-10-01T00:00:00Z",
+  "flowType": "MESSAGE",
+  "edges": [],
+  "nodes": [
+   {
+    "uuid": "ai-n0",
+    "actions": [
+     {
+      "type": "send_msg",
+      "uuid": "ai-a1",
+      "text": "Ask me any question about your health.",
+      "quick_replies": [],
+      "attachments": [],
+      "labels": [],
+      "all_urns": false
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "ai-e0",
+      "destination_uuid": "ai-n1"
+     }
+    ]
+   },
+   {
+    "uuid": "ai-n1",
+    "actions": [
+     {
+      "type": "call_webhook",
+      "uuid": "ai-a2",
+      "method": "POST",
+      "url": "https://api.example.org/answer",
+      "headers": {
+       "Authorization": "[redacted]",
+       "Content-Type": "application/json"
+      },
+      "body": "{}",
+      "result_name": "answer"
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "ai-e1",
+      "destination_uuid": "ai-n2"
+     }
+    ]
+   },
+   {
+    "uuid": "ai-n2",
+    "actions": [
+     {
+      "type": "send_msg",
+      "uuid": "ai-a3",
+      "text": "@results.answer",
+      "quick_replies": [],
+      "attachments": [],
+      "labels": [],
+      "all_urns": false
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "ai-e2",
+      "destination_uuid": null
+     }
+    ]
+   }
+  ],
+  "ui": {
+   "stickies": {}
+  }
+ },
+ {
+  "uuid": "00000000-0000-4000-8000-000000000005",
+  "id": "005",
+  "name": "Ask AI copy",
+  "keywords": [
+   "test"
+  ],
+  "isActive": true,
+  "tag": {
+   "label": "Testing"
+  },
+  "versionNumber": "13.2.0",
+  "lastPublishedAt": "2026-10-01T00:00:00Z",
+  "lastChangedAt": "2026-10-01T00:00:00Z",
+  "flowType": "MESSAGE",
+  "edges": [],
+  "nodes": [
+   {
+    "uuid": "cp-n0",
+    "actions": [
+     {
+      "type": "send_msg",
+      "uuid": "cp-a1",
+      "text": "Test copy of the AI flow.",
+      "quick_replies": [],
+      "attachments": [],
+      "labels": [],
+      "all_urns": false
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "rx1",
+      "destination_uuid": null
+     },
+     {
+      "uuid": "rx2",
+      "destination_uuid": null
+     }
+    ],
+    "router": {
+     "type": "switch",
+     "operand": "@fields.stage",
+     "categories": [
+      {
+       "uuid": "c1",
+       "name": "Early",
+       "exit_uuid": "rx1"
+      },
+      {
+       "uuid": "c2",
+       "name": "Late",
+       "exit_uuid": "rx2"
+      }
+     ],
+     "cases": [
+      {
+       "uuid": "k1",
+       "type": "has_any_word",
+       "arguments": [
+        "early"
+       ],
+       "category_uuid": "c1"
+      },
+      {
+       "uuid": "k2",
+       "type": "has_any_word",
+       "arguments": [
+        "late"
+       ],
+       "category_uuid": "c2"
+      }
+     ]
+    }
+   }
+  ],
+  "ui": {
+   "stickies": {}
+  }
+ },
+ {
+  "uuid": "00000000-0000-4000-8000-000000000006",
+  "id": "006",
+  "name": "Survey start",
+  "keywords": [
+   "survey"
+  ],
+  "isActive": true,
+  "tag": null,
+  "versionNumber": "13.2.0",
+  "lastPublishedAt": "2026-10-01T00:00:00Z",
+  "lastChangedAt": "2026-10-01T00:00:00Z",
+  "flowType": "MESSAGE",
+  "edges": [],
+  "nodes": [
+   {
+    "uuid": "sv-n0",
+    "actions": [
+     {
+      "type": "send_msg",
+      "uuid": "sv-a1",
+      "text": "Thank you for helping with our survey.",
+      "quick_replies": [],
+      "attachments": [],
+      "labels": [],
+      "all_urns": false
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "sv-e0",
+      "destination_uuid": "sv-n1"
+     }
+    ]
+   },
+   {
+    "uuid": "sv-n1",
+    "actions": [
+     {
+      "type": "enter_flow",
+      "uuid": "sv-a2",
+      "flow": {
+       "uuid": "00000000-0000-4000-8000-000000000007",
+       "name": "Survey save"
+      }
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "sv-e1",
+      "destination_uuid": null
+     }
+    ]
+   }
+  ],
+  "ui": {
+   "stickies": {}
+  }
+ },
+ {
+  "uuid": "00000000-0000-4000-8000-000000000007",
+  "id": "007",
+  "name": "Survey save",
+  "keywords": [],
+  "isActive": true,
+  "tag": null,
+  "versionNumber": "13.2.0",
+  "lastPublishedAt": "2026-10-01T00:00:00Z",
+  "lastChangedAt": "2026-10-01T00:00:00Z",
+  "flowType": "MESSAGE",
+  "edges": [],
+  "nodes": [
+   {
+    "uuid": "ss-n0",
+    "actions": [
+     {
+      "type": "link_google_sheet",
+      "uuid": "ss-a1",
+      "action_type": "WRITE",
+      "name": "Responses",
+      "range": "Sheet1!A1",
+      "url": "https://docs.google.com/spreadsheets/d/abc123/edit",
+      "sheet_id": "1",
+      "row": [],
+      "row_data": [],
+      "result_name": "sheet"
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "ss-e0",
+      "destination_uuid": "ss-n1"
+     }
+    ]
+   },
+   {
+    "uuid": "ss-n1",
+    "actions": [
+     {
+      "type": "send_broadcast",
+      "uuid": "ss-a2",
+      "text": "",
+      "contacts": [
+       {
+        "uuid": "c-1",
+        "name": "Asha Rao"
+       }
+      ],
+      "groups": [],
+      "templating": {
+       "template": {
+        "name": "survey_alert",
+        "uuid": "t1"
+       },
+       "variables": []
+      },
+      "attachments": [],
+      "legacy_vars": [],
+      "compose": null
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "ss-e1",
+      "destination_uuid": null
+     }
+    ]
+   }
+  ],
+  "ui": {
+   "stickies": {
+    "s1": {
+     "title": "Note",
+     "body": "If the sheet fails call 9876543210 or mail lead@example.org"
+    }
+   }
+  }
+ },
+ {
+  "uuid": "00000000-0000-4000-8000-000000000008",
+  "id": "008",
+  "name": "Old draft",
+  "keywords": [],
+  "isActive": true,
+  "tag": null,
+  "versionNumber": "13.2.0",
+  "lastPublishedAt": "2026-10-01T00:00:00Z",
+  "lastChangedAt": "2026-10-01T00:00:00Z",
+  "flowType": "MESSAGE",
+  "edges": [],
+  "nodes": [
+   {
+    "uuid": "od-n0",
+    "actions": [
+     {
+      "type": "send_msg",
+      "uuid": "od-a1",
+      "text": "Draft message that is no longer used.",
+      "quick_replies": [],
+      "attachments": [],
+      "labels": [],
+      "all_urns": false
+     }
+    ],
+    "exits": [
+     {
+      "uuid": "od-e0",
+      "destination_uuid": null
+     }
+    ]
+   }
+  ],
+  "ui": {
+   "stickies": {}
+  }
+ }
+]

@@ -2,16 +2,20 @@
 
 Small Python utilities for pulling data out of a [Glific](https://glific.org) instance through its GraphQL API. Use them to audit, back up or analyse your chatbot setup.
 
-The scripts need only Python 3.9+ and its standard library. Nothing to install.
+The scripts need only Python 3.9+ and its standard library. To have Claude explain the bot as programmes (the default when available), the map also needs the `anthropic` package and an Anthropic API key (`ANTHROPIC_API_KEY` in `.env`); without them it groups flows by their links instead. Install the package into a virtual environment at the repo root, which `org_map.sh` uses automatically when it exists:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install anthropic
+```
 
 ## Quick start
 
 ```bash
 cp .env.example .env                                  # fill in URL, phone, password
-./flow_map.sh --project "My Bot" --tag "2025 Pilot"   # fetch flows and triggers, build the HTML, open it
+./org_map.sh                                          # fetch flows, triggers and settings, build the HTML, open it
 ```
 
-`flow_map.sh` runs the whole flow-architecture pipeline in one step and opens the page it wrote. It works from any directory, and relative paths such as `--from-json ./export` are read from the directory you run it in. Run `./flow_map.sh --help` for all options.
+`org_map.sh` runs the whole pipeline in one step and opens the page it wrote, `org_map.html`. With an API key, Claude explains the bot as programmes and their parts; `--no-claude` keeps everything on your machine and groups flows by their links (see the [feature README](org_programme_architecture/README.md#programmes-from-claude)). It works from any directory, and relative paths such as `--from-json ./export` are read from the directory you run it in. Run `./org_map.sh --help` for all options.
 
 ## Features
 
@@ -19,7 +23,7 @@ Each feature lives in its own folder with its own README.
 
 | Feature | What it does |
 |---|---|
-| [`get_system_flow_architecture/`](get_system_flow_architecture/) | Extracts all active flows (with nodes and edges) and all triggers (scheduled flow starts), and builds an HTML map of how they connect. Run `python3 get_system_flow_architecture/build_flow_architecture.py` |
+| [`org_programme_architecture/`](org_programme_architecture/) | Extracts all active flows, triggers and flow settings, and builds one page of programmes (from Claude, or grouped by links with `--no-claude`) with a graph of how the flows start and connect. Run `./org_map.sh` |
 
 ## Setup
 
@@ -39,14 +43,15 @@ export GLIFIC_PASSWORD=secret
 
 ## Output
 
-Every run writes its results to a new folder, `output/<feature>/<YYYY-MM-DD_HH-MM-SS>/`, at the repo root, whatever directory you run it from. For example: `output/get_system_flow_architecture/2026-11-11_21-43-05/`. The folder is named by the local time the run started, and earlier runs are never overwritten. Delete old run folders when you no longer need them.
+Every run writes its results to a new folder, `output/<feature>/<YYYY-MM-DD_HH-MM-SS>/`, at the repo root, whatever directory you run it from. For example: `output/org_programme_architecture/2026-11-11_21-43-05/`. The folder is named by the local time the run started, and earlier runs are never overwritten. Delete old run folders when you no longer need them.
 
 `output/` is git-ignored (only `output/.gitkeep` is tracked), so exported data cannot be committed by accident.
 
 ## Security
 
 - Never commit credentials. `.env` is already in `.gitignore`.
-- Webhook credentials (auth headers, API keys in URLs and bodies) are blanked before `flows.json` is saved. See the [feature README](get_system_flow_architecture/README.md#notes) for details.
+- Webhook credentials (auth headers, API keys in URLs and bodies) are blanked before `flows.json` is saved. See the [feature README](org_programme_architecture/README.md#notes) for details.
+- When an Anthropic API key is set, the map sends cleaned facts and short message excerpts to the Anthropic API. Staff names, phone numbers, emails and links are stripped first, and the exact request is saved as `claude_input.json`. Use `--no-claude` (or leave the key unset) to send nothing.
 - The exported JSON can contain message content, contact fields and webhook URLs. It stays in the git-ignored `output/` folder, and so does the generated HTML. Treat these files as sensitive and don't share them.
 
 ## License
