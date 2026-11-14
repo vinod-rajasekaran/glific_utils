@@ -17,6 +17,7 @@ Either way the full flow graph is one more view on the page: how every flow star
 | [`graph_svg.py`](graph_svg.py) | Draws a `GraphView` as SVG, one small function per kind of box | |
 | [`cards.py`](cards.py), [`sections.py`](sections.py) | Flow and trigger cards; the tables under a graph | |
 | [`programme_claude.py`](programme_claude.py) | One Claude call ([prompt](PROGRAMME_PROMPT.md)), then checks every reference against the facts | `claude_output.json` |
+| [`compare_models.py`](compare_models.py) | Sends a run's saved Claude request to several models, scores each answer with the same checks, draws a page per answer, and can have Opus judge them blind | `comparison.json`, `judgement.json` |
 | [`render_org_map.py`](render_org_map.py) | The page: programme cards, a view per programme, and the full graph as one more view | `org_map.html` |
 | [`page_check.py`](page_check.py) | Checks the finished page: tags balance, no em dashes | |
 | [`assets/`](assets/) | Page markup, styles and scripts, inlined into the page at build time | |
@@ -69,6 +70,7 @@ output/org_programme_architecture/2026-11-13_22-31-13/
 | `--tz` | `GLIFIC_TZ`, else `Asia/Kolkata` | Display time zone: `"IST, UTC+5:30"` or an IANA name. UTC is shown in brackets |
 | `--date` | today, or the date the `--from-json` folder name starts with | Snapshot date (`YYYY-MM-DD`): decides which triggers have ended |
 | `--no-claude` | off | Group flows by their links instead of asking Claude. See [Without Claude](#without-claude) |
+| `--model` | `claude-opus-5-5` | The Claude model that reads the flows: `claude-opus-5-5`, `claude-sonnet-5-5` (about 40% of the cost, twice as fast, a little less accurate) or `claude-haiku-5-5` (not recommended). See the [comparison](../docs/evals/2026-11-14-model-comparison.md) |
 | `--reuse-claude DIR` | | Use Claude's saved answer in `DIR/claude_output.json` instead of calling the API |
 | `--from-json DIR` | | Rebuild from `flows.json`, `triggers.json` and, if present, `settings.json` saved earlier, with no Glific calls |
 | `--footer` | none | One sentence for the footer |

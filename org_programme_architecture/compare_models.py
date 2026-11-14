@@ -34,7 +34,7 @@ importlib.import_module("glific_common.api")   # loads .env, which holds the Ant
 from glific_get_flows import run_dir, save_json  # noqa: E402
 from programme_claude import _client, _serious, run_programmes, validate, ProgrammeError  # noqa: E402
 
-MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
+from programme_claude import MODELS  # noqa: E402
 # $ per million tokens: input, output, cache read, cache write (5-minute). Haiku's prices hold up to 100K-token prompts.
 PRICES = {"claude-opus-5-5": (4.00, 20.00, 0.20, 5.00), "claude-sonnet-5-5": (2.00, 10.00, 0.10, 2.50),
           "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125)}

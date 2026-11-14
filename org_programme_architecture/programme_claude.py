@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 MODEL = "claude-opus-5-5"
+MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]   # --model choices
 EFFORT = "high"
 MAX_TOKENS = 128000
 # Models that take server-side refusal fallbacks ("default" routing); Haiku has none

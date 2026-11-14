@@ -4,6 +4,22 @@ Only the big decisions: the ones that shape how the repo works and would be cost
 
 ---
 
+## 2026-11-14: Opus 5.5 reads the flows for the page; Sonnet 5.5 as an option
+
+**Decided.** The org map's one Claude call stays on `claude-opus-5-5`. `--model claude-sonnet-5-5` (or Haiku) can be chosen per run.
+
+**Why.** We compared the three models on a real 44-flow account, two runs each with the identical request, judged blind against the facts ([write-up](evals/2026-11-14-model-comparison.md)).
+- **Pass rate.** All six answers passed the automatic checks and placed every flow.
+- **Opus** was the most accurate and found the issues a programme team would act on, for about $0.84–$1.00 a run.
+- **Sonnet** was solid with minor slips, at $0.37 and twice as fast.
+- **Haiku** made factual errors and unsupported claims for $0.05, and was no faster.
+
+The call runs once per page build and its answer guides programme decisions, so accuracy matters more than about 60 cents.
+
+**Turned down.**
+- Haiku as the default: too many wrong claims.
+- Sonnet as the default: cheaper, but it missed the less obvious findings.
+
 ## 2026-11-14: The MCP server serves the org map's cleaned facts; the assistant does the reading
 
 **Decided.** The MCP server has four read-only org tools (`get_org_overview`, `get_flow_facts`, `get_org_facts`, `get_org_map`). They pull the account live and return the same cleaned facts the org map sends to Claude, plus the programmes from the latest saved `org_map.json`. The MCP server never calls a model itself. Building the page, with Claude's checked and evidenced answer, stays a separate step the user runs (`./org_map.sh`).
@@ -53,9 +69,3 @@ Only the big decisions: the ones that shape how the repo works and would be cost
 - `--no-claude` (or no API key) sends nothing and groups flows by their links instead.
 
 **Why.** The exports hold real people's data and the org's credentials. Sending cleaned excerpts gives Claude enough to read purpose without the personal data.
-
----
-
-## Open
-
-- **Which model reads the flows for the page.** It is `claude-opus-5-5` at effort `high`. A comparison with Sonnet 5.5 and Haiku 5.5 is proposed; record the outcome here.

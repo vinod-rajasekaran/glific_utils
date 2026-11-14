@@ -154,3 +154,21 @@ class OrgMapJsonTest(unittest.TestCase):
                            capture_output=True, text=True, env=e, cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertNotIn("9876543210", (Path(p.stdout.split()[0]).parent / "org_map.json").read_text())
+
+
+class ModelOptionTest(unittest.TestCase):
+    def test_model_is_recorded_in_claude_input(self):
+        p, _ = run("--reuse-claude", str(FIX), "--model", "claude-sonnet-5-5")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        sent = json.loads((Path(p.stdout.split()[0]).parent / "claude_input.json").read_text())
+        self.assertEqual(sent["model"], "claude-sonnet-5-5")
+
+    def test_default_is_opus(self):
+        p, _ = run("--reuse-claude", str(FIX))
+        sent = json.loads((Path(p.stdout.split()[0]).parent / "claude_input.json").read_text())
+        self.assertEqual(sent["model"], "claude-opus-5-5")
+
+    def test_unknown_model_is_refused(self):
+        p, _ = run("--model", "gpt-4", "--no-claude")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("invalid choice", p.stderr)

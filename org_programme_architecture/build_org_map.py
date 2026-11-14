@@ -39,7 +39,7 @@ from glific_get_triggers import fetch_triggers
 from glific_common.org_facts.model import Model, Settings
 from glific_common.org_facts.grouping import group_answer
 from render_org_map import render_org_map
-from programme_claude import MODEL, PROMPT_PATH, ProgrammeError, run_programmes, validate
+from programme_claude import MODEL, MODELS, PROMPT_PATH, ProgrammeError, run_programmes, validate
 from glific_common.org_facts.facts import build_facts
 from glific_common.org_facts import org_map_file
 
@@ -71,6 +71,8 @@ def parse_args():
                         "(default: today, or the date the --from-json folder name starts with)")
     p.add_argument("--no-claude", action="store_true",
                    help="do not send anything to Claude: group the flows by their links instead of into programmes")
+    p.add_argument("--model", choices=MODELS, default=MODEL,
+                   help=f"Claude model that reads the flows (default {MODEL}; see docs/DECISIONS.md for the comparison)")
     p.add_argument("--reuse-claude", metavar="DIR", type=Path,
                    help="read Claude's answer from DIR/claude_output.json instead of calling the API")
     p.add_argument("--footer", default="", help="one sentence for the footer")
@@ -165,17 +167,17 @@ def claude_answer(args, facts, out_dir):
 
 
 def _claude_answer(args, facts, out_dir):
-    save_json({"model": MODEL, "system": PROMPT_PATH.read_text(encoding="utf-8"), "facts": facts}, "claude_input.json", out_dir)
+    save_json({"model": args.model, "system": PROMPT_PATH.read_text(encoding="utf-8"), "facts": facts}, "claude_input.json", out_dir)
     if args.reuse_claude:
         raw = json.loads((args.reuse_claude / "claude_output.json").read_text(encoding="utf-8"))
         save_json(raw, "claude_output.json", out_dir)
         validated, notes = validate(raw, facts)
         print(f"Using Claude's saved answer from {args.reuse_claude}", file=sys.stderr)
     else:
-        print(f"Sending cleaned facts about {len(facts['flows'])} flows to Claude ({MODEL}); this can take a few minutes. "
+        print(f"Sending cleaned facts about {len(facts['flows'])} flows to Claude ({args.model}); this can take a few minutes. "
               "Use --no-claude to keep everything on this machine.", file=sys.stderr)
         try:
-            raw, validated, notes = run_programmes(facts)
+            raw, validated, notes = run_programmes(facts, model=args.model)
         except ProgrammeError as e:
             if getattr(e, "raw", None) is not None:   # keep the paid-for answer to inspect or reuse
                 save_json(e.raw, "claude_output.json", out_dir)
