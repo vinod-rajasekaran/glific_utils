@@ -10,6 +10,7 @@
 .pill2.sys{border-color:var(--slate);background:var(--slate-bg)}
 .pill2.warn{border-color:var(--trig);background:var(--trig-bg);color:var(--trig)}
 .pill2.claude{border-style:dashed}
+.pill2.tags{background:transparent;color:var(--muted)}
 .org{max-width:80ch;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:0 0 8px}
 .org p{margin:4px 0}
 .org.banner{border-left:4px solid var(--trig);background:var(--trig-bg)}

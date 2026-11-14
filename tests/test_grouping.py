@@ -76,9 +76,17 @@ class StructurePageTest(unittest.TestCase):
         self.assertNotIn('title="Claude’s reading"', page)
         self.assertNotIn('class="role claude', page)
 
+    def test_home_does_not_credit_claude(self):
+        page = groups_page()
+        home = page[page.index('id="home"'):page.index("</section>", page.index('id="home"'))]
+        self.assertNotIn("Claude\u2019s reading", home)
+        self.assertIn("worked out from the flows\u2019 links", home)
+
     def test_each_flow_shows_its_tag(self):
         page = groups_page()
-        self.assertIn("Tags: Demo", page)
+        home = page[page.index('id="home"'):page.index("</section>", page.index('id="home"'))]
+        self.assertIn("Tags: Demo (4)", home)            # on the first-screen card too
+        self.assertIn("Tags: no tag (2)", home)
 
     def test_hostile_export_leaks_nothing(self):
         page = groups_page(*hostile())

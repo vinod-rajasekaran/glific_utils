@@ -207,9 +207,10 @@ class CardPillsTest(unittest.TestCase):
         page = ru.render_org_map(m, facts, v, p)
         home = page[page.index('id="home"'):page.index('class="ucview"')]
         for card in re.findall(r'<a class="uccard.*?</a>', home, re.S):
-            self.assertLessEqual(card.count('class="pill2'), 5, card[:80])
+            self.assertLessEqual(card.count('class="pill2'), 6, card[:80])
         self.assertNotIn("Groups:", home)
         self.assertNotIn("without the Demo tag", home)
+        self.assertIn("Tags: Demo", home)
 
 
 if __name__ == "__main__":
