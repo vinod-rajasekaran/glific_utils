@@ -13,41 +13,11 @@ phone numbers or keys.
 Usage (same env vars as the other scripts):
   python3 glific_get_settings.py      # writes settings.json to this run's folder
 """
-import sys
 
 from glific_get_flows import login, save_json
-from glific_common.api import post as glific_post
+from glific_common.org_facts import fetch
 
-SETTINGS_QUERY = """
-query organization {
-  organization {
-    organization {
-      name
-      newcontactFlowId
-      optinFlowId
-      outOfOffice { enabled flowId defaultFlowId }
-      regxFlow { flowId regx }
-    }
-    errors { key message }
-  }
-}
-"""
-
-
-def fetch_settings(token, post=glific_post):
-    """The organisation's flow settings, or {} (with a warning) when they cannot be read."""
-    try:
-        result = post("/api", {"query": SETTINGS_QUERY}, token)
-    except Exception as e:   # noqa: BLE001 - settings are optional; the flow map works without them
-        print(f"Warning: could not read the organisation settings ({type(e).__name__}); "
-              "flows started by Glific settings will show as 'No start found'.", file=sys.stderr)
-        return {}
-    org = ((result.get("data") or {}).get("organization") or {}).get("organization")
-    if result.get("errors") or not org:
-        print("Warning: the organisation settings were not returned; "
-              "flows started by Glific settings will show as 'No start found'.", file=sys.stderr)
-        return {}
-    return org
+fetch_settings = fetch.fetch_settings   # the organisation's flow settings, or {} with a warning
 
 
 if __name__ == "__main__":

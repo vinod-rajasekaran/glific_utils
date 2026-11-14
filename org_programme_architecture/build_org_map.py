@@ -11,6 +11,7 @@ Each run writes to a new folder, output/org_programme_architecture/<YYYY-MM-DD_H
   settings.json            the organisation's name and the settings that start flows
   claude_input.json        what was sent to Claude (when Claude is used)
   claude_output.json       Claude's answer (when Claude is used)
+  org_map.json             the programmes or groups, cleaned, for the MCP server
   org_map.html             the page
 
 Usage (settings come from .env):
@@ -40,6 +41,7 @@ from glific_common.org_facts.grouping import group_answer
 from render_org_map import render_org_map
 from programme_claude import MODEL, PROMPT_PATH, ProgrammeError, run_programmes, validate
 from glific_common.org_facts.facts import build_facts
+from glific_common.org_facts import org_map_file
 
 HTML_NAME = "org_map.html"
 
@@ -98,6 +100,7 @@ def main():
         answer = group_answer(m, reason)
     path = out_dir / HTML_NAME
     path.write_text(render_org_map(m, facts, answer, dropped), encoding="utf-8")
+    save_json(org_map_file.record(m, answer, dropped), org_map_file.FILENAME, out_dir)   # read by the MCP server
     print(f"\nSaved {path} ({'programmes from Claude' if answer.get('source') != 'structure' else 'groups by links, no Claude'})",
           file=sys.stderr)
     print(path.resolve())  # the only line on stdout, so wrappers can open it

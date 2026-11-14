@@ -26,7 +26,7 @@ Nothing is tied to a particular org: every active flow in the account is read.
 Shared with the other features, in [`glific_common/`](../glific_common/):
 
 - `api.py`, `flows.py`, `output.py`, `redact.py`, `privacy.py`: the Glific client (login, GraphQL paging, `.env`), flow export, run folders, credential redaction and the masking of personal data.
-- [`org_facts/`](../glific_common/org_facts/): reading an export, which the MCP server also uses.
+- [`org_facts/`](../glific_common/org_facts/): pulling and reading an export into cleaned facts. The [MCP server](../glific_mcp/) uses the same code, so an assistant can read the facts directly; it also reads the `org_map.json` each run saves.
 
 | `glific_common/org_facts/` | What it does | Output |
 |---|---|---|
@@ -36,6 +36,8 @@ Shared with the other features, in [`glific_common/`](../glific_common/):
 | `facts.py` | Cleaned facts about every flow, with IDs, for Claude | `claude_input.json` |
 | `grouping.py` | Groups flows by their links, in the shape of Claude's answer, for runs without Claude | |
 | `schedules.py`, `text.py` | Schedules in plain words; text helpers | |
+| `fetch.py` | Pulls the active flows (with definitions), triggers and settings; raises errors rather than exiting | `flows.json`, `triggers.json`, `settings.json` |
+| `org_map_file.py` | Writes and finds `org_map.json`: the programmes or groups, cleaned, for the MCP server | `org_map.json` |
 
 ## Usage
 
@@ -55,6 +57,7 @@ output/org_programme_architecture/2026-11-13_22-31-13/
 ├── settings.json
 ├── claude_input.json       # unless --no-claude: exactly what was sent to Claude
 ├── claude_output.json      # Claude's answer, when there is one (reuse it with --reuse-claude)
+├── org_map.json            # the programmes or groups, cleaned; read by the MCP server's get_org_map
 └── org_map.html            # open in a browser
 ```
 

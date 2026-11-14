@@ -7,7 +7,7 @@ Python tools for understanding, auditing and working with a [Glific](https://gli
 | Feature | What it does | Run |
 |---|---|---|
 | [`org_programme_architecture/`](org_programme_architecture/) | Pulls every active flow, trigger and the organisation's flow settings, and builds one page, `org_map.html`: the bot's programmes (read by Claude, or grouped by their links with `--no-claude`), a graph of how each programme's flows start and connect, and the full flow graph | `./org_map.sh` |
-| [`glific_mcp/`](glific_mcp/) | An MCP server that lets Claude (or any MCP client) read the account's flows with full definitions, collections, templates, tags, languages and settings; write tools only when switched on. **Moved here from [`glific-mcp`](https://github.com/vinod-rajasekaran/glific-mcp)** and rewritten in Python | `./glific_mcp.sh` |
+| [`glific_mcp/`](glific_mcp/) | An MCP server that lets Claude (or any MCP client) read the account's flows with full definitions, collections, templates, tags, languages and settings, and the org map's cleaned facts and saved programmes, so you can ask what the bot does; write tools only when switched on. **Moved here from [`glific-mcp`](https://github.com/vinod-rajasekaran/glific-mcp)** and rewritten in Python | `./glific_mcp.sh` |
 
 Shared code (the Glific client, run folders, credential redaction, masking of personal data, and `org_facts/`, which reads an export into cleaned facts) lives in [`glific_common/`](glific_common/).
 
@@ -68,7 +68,7 @@ Tests live in `tests/<feature>/` (shared code in `tests/glific_common/`), use ma
 - Never commit credentials. `.env` is git-ignored.
 - Webhook credentials (auth headers, API keys in URLs and bodies) are blanked before `flows.json` is saved. See the [feature README](org_programme_architecture/README.md#notes).
 - When an Anthropic API key is set, `org_map.sh` sends cleaned facts and short message excerpts to the Anthropic API. Staff names, phone numbers, emails and links are stripped first, and the exact request is saved as `claude_input.json`. Use `--no-claude` (or leave the key unset) to send nothing.
-- The MCP server returns what its tools read to the assistant's model provider. It never reads contacts or message history, blanks webhook credentials and masks phone numbers, emails and links in message text; tools that change the account or message people are off unless `GLIFIC_MCP_ALLOW_WRITES=1`. See [its README](glific_mcp/README.md#privacy).
+- The MCP server returns what its tools read to the assistant's model provider. It never reads contacts or message history, blanks webhook credentials and masks phone numbers, emails and links in message text (the org tools also mask staff names, like the org map); tools that change the account or message people are off unless `GLIFIC_MCP_ALLOW_WRITES=1`. See [its README](glific_mcp/README.md#privacy).
 - Exported JSON can contain message content, contact fields and webhook URLs, and the generated pages contain flow, group and sheet names. They stay in the git-ignored `output/` folder. Treat them as sensitive and don't share them.
 
 ## Adding a feature
