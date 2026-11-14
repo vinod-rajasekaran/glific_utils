@@ -24,6 +24,7 @@ from string import Template
 from urllib.parse import urlsplit
 
 from graph_layout import layout as graph_layout
+from privacy import _host, mask, staff_names
 
 try:
     from zoneinfo import ZoneInfo
@@ -138,7 +139,7 @@ def names(items):
         if isinstance(item, dict):
             item = item.get("name") or item.get("label")
         if item:
-            out.append(str(item))
+            out.append(mask(str(item)))   # group and label names can hold phone numbers or emails
     return out
 
 
@@ -179,11 +180,13 @@ def webhook_desc(action):
     if parts:
         what = (parts.hostname or "unknown host") + (f":{port}" if port else "")
         tail = [p for p in parts.path.split("/") if p]
-        # Show the last path segment only when it is a plain word, never a token-like string
-        if tail and re.fullmatch(r"[A-Za-z][A-Za-z_-]{0,24}", tail[-1]):
+        # Show the last path segment only when it is a short lowercase word, never a token-like string
+        if tail and re.fullmatch(r"[a-z][a-z_-]{0,19}", tail[-1]):
             what += f" ({tail[-1]})"
+    elif re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,40}", url.split("?")[0] or ""):
+        what = f"Glific function {url.split('?')[0]}"
     else:
-        what = f"Glific function {url.split('?')[0] or 'unnamed'}"
+        what = "a webhook without a full address"
     purpose = str(action.get("result_name") or "").strip()
     return what + (f" for {purpose}" if purpose.lower() not in GENERIC_RESULT else "")
 
@@ -307,6 +310,13 @@ def summarise(g):
             s["sets"].append("language")
         elif kind == "call_webhook":
             s["calls"].append(webhook_desc(a))
+            url = str(a.get("url") or "").strip()
+            if "://" in url:
+                host = _host(url)
+                if host != "[link]":
+                    s["hosts"].append(host)
+            elif url:
+                s["functions"].append(url.split("?")[0])
         elif kind == "link_google_sheet":
             tab = str(a.get("range") or "").split("!")[0]
             mode = "writes" if str(a.get("action_type") or "").upper() == "WRITE" else "reads"
@@ -337,6 +347,21 @@ def summarise(g):
                 lost.append("a webhook call")
     s["unreachable"] = len(g.nodes) - len(g.reachable)
     s["lost"] = list(dict.fromkeys(lost))
+    return s
+
+
+TEXT_KEYS = ("routes", "tickets", "logs", "sheets", "alerts", "calls", "labels", "interactive", "templates", "lost")
+
+
+def mask_summary(s, staff):
+    """Mask personal data in every name and label a summary holds, once, so the page and the
+    facts sent to Claude never see it: router branches, ticket topics, sheets, labels, alerts,
+    group-move conditions and the names of flows a flow starts."""
+    for key in TEXT_KEYS:
+        s[key] = [mask(x, staff) for x in s[key]]
+    s["moves"] = [(d, tuple(mask(g, staff) for g in gs), tuple(mask(c, staff) for c in cond) if cond else cond)
+                  for d, gs, cond in s["moves"]]
+    s["starts"] = [(v, mask(name, staff)) for v, name in s["starts"]]
     return s
 
 
@@ -375,8 +400,9 @@ class Model:
         self.setting_starts = setting_starts(org, flows)
         self.tz, self.tz_label = parse_tz(st.tz)
         self.flows = {f.get("uuid"): f for f in flows if f.get("uuid")}
+        self.staff = staff_names(self.flows)
         self.graphs = {u: FlowGraph(f) for u, f in self.flows.items()}
-        self.sum = {u: summarise(g) for u, g in self.graphs.items()}
+        self.sum = {u: mask_summary(summarise(g), self.staff) for u, g in self.graphs.items()}
         self.findings = []
         self.triggers = triggers
         self._triggers()
@@ -384,16 +410,20 @@ class Model:
         self._links()
         self._roles()
         self.no_start = []
+        self.offgraph_start = []
         self.setting_flows = []
         self.group_nodes = {}
         self.linked_group = set()
         self._graph_map()
 
     def name(self, u):
-        return (self.flows.get(u) or {}).get("name") or u
+        return mask((self.flows.get(u) or {}).get("name") or u, self.staff)
 
     def tag_label(self, u):
-        return (((self.flows.get(u) or {}).get("tag") or {}).get("label") or "").strip()
+        return mask((((self.flows.get(u) or {}).get("tag") or {}).get("label") or "").strip())
+
+    def keywords(self, u):
+        return [mask(k) for k in (self.flows.get(u) or {}).get("keywords") or []]
 
     def tagged(self, u):
         return bool(self.st.tag) and self.tag_label(u).lower() == self.st.tag.strip().lower()
@@ -412,7 +442,7 @@ class Model:
                 self.findings.append(f"Trigger {t.get('name')} is marked active but ended on {fmt_day(end)}, so it is treated as inactive.")
             active = bool(t.get("isActive")) and not ended
             if u not in self.flows:
-                self.missing_trig[fl.get("name") or "a flow with no name"].append(t)
+                self.missing_trig[mask(fl.get("name") or "a flow with no name", self.staff)].append(t)
                 continue
             (self.active_trig if active else self.earlier_trig)[u].append(t)
             if active and not (names(t.get("groups")) or names(t.get("waGroups"))):
@@ -431,8 +461,8 @@ class Model:
             return
         if self.st.tag:
             seeds = [u for u in self.flows if self.tagged(u)]
-        else:
-            seeds = [u for u in self.flows if self.flows[u].get("keywords")]
+        else:   # without a tag: everything a contact or a schedule can start, including Glific settings
+            seeds = [u for u in self.flows if self.keywords(u)] + sorted(self.setting_starts)
         seeds += list(self.active_trig)
         scope, stack = set(), list(dict.fromkeys(seeds))
         while stack:
@@ -454,6 +484,11 @@ class Model:
 
     def _callers(self):
         scope = self.scope
+        self.all_callers = defaultdict(Counter)   # across the whole export, to tell "no start" from "started elsewhere"
+        for u in self.flows:
+            for v, _ in self.sum[u]["starts"]:
+                if v in self.flows and v != u:
+                    self.all_callers[v][u] += 1
         self.callers = defaultdict(Counter)   # v -> {caller u: number of enter_flow actions}
         for u in scope:
             for v, _ in self.sum[u]["starts"]:
@@ -487,7 +522,7 @@ class Model:
                 self.columns[u] = "shared"
             elif len(self.callers[u]) == 1:
                 self.columns[u] = "journey"
-            elif self.active_trig.get(u) or (self.flows[u].get("keywords") and starts_any(u)):
+            elif self.active_trig.get(u) or (self.keywords(u) and starts_any(u)):
                 self.columns[u] = "entry"
             else:
                 self.columns[u] = "strip"
@@ -505,9 +540,12 @@ class Model:
         for u, v, _ in self.data_links:
             if u in sc and v in sc:
                 linked |= {u, v}
-        linked |= {u for u in sc if self.active_trig.get(u) or self.flows[u].get("keywords")}
+        entry = {u for u in sc if self.active_trig.get(u) or self.keywords(u) or u in self.setting_starts}
+        linked |= entry
         by_name = lambda u: self.name(u).lower()
-        order = sorted(linked, key=lambda u: (-len(self.callers[u]) - sum(1 for v, _ in self.sum[u]["starts"] if v in sc), by_name(u)))
+        degree = lambda u: len(self.callers[u]) + sum(1 for v, _ in self.sum[u]["starts"] if v in sc)
+        # Entry points first (schedules, keywords, settings), so the cap never hides how things start
+        order = sorted(linked, key=lambda u: (u not in entry, -degree(u), by_name(u)))
         on = set(order[:GRAPH_CAP])
         overflow = sorted(order[GRAPH_CAP:], key=by_name)
         if overflow:
@@ -532,7 +570,8 @@ class Model:
         for u in sorted(on - set(no_starts), key=by_name):
             for t in self.active_trig.get(u, []):
                 for gname in names(t.get("groups")):
-                    targets[gname].append(u)
+                    if u not in targets[gname]:
+                        targets[gname].append(u)
         self.linked_group = set()
         movers = defaultdict(lambda: {"into": [], "out of": []})
         for u in sorted(self.flows, key=by_name):
@@ -555,13 +594,17 @@ class Model:
         called = {u for u in on if any(c in on for c in self.callers[u])}
         # a keyword box only where the keyword is how the flow starts; otherwise its card lists the keywords
         own = on - set(no_starts)
-        self.trigger_flows = sorted((u for u in own if self.active_trig.get(u) or (self.flows[u].get("keywords") and u not in called)),
+        self.trigger_flows = sorted((u for u in own if self.active_trig.get(u) or (self.keywords(u) and u not in called)),
                                     key=by_name)
         # Flows that Glific's organisation settings start get a "Glific setting" box
         self.setting_flows = sorted((u for u in own if u in self.setting_starts), key=by_name)
-        # "No start found" only when nothing in scope starts the flow, not just nothing on this graph
-        self.no_start = sorted((u for u in own if not (set(self.callers[u]) - set(ignore_callers)) and u not in self.trigger_flows
-                                and u not in self.setting_starts), key=by_name)
+        # A flow with no start box and no caller on this graph: "No start found" when nothing in the
+        # export starts it (or only ignored test flows do); a "Started off this graph" box when a
+        # flow that is not drawn here starts it.
+        unstarted = [u for u in own if u not in self.trigger_flows and u not in self.setting_starts
+                     and not (set(self.all_callers[u]) - set(ignore_callers)) & on]
+        self.offgraph_start = sorted((u for u in unstarted if set(self.all_callers[u]) - set(ignore_callers)), key=by_name)
+        self.no_start = sorted((u for u in unstarted if u not in self.offgraph_start), key=by_name)
         self.entry = [u for u in self.trigger_flows if u not in called]
 
     def edges(self):
@@ -572,14 +615,16 @@ class Model:
             out.append([f"s-{u}", f"f-{u}", "s"])
         for u in self.no_start:
             out.append([f"x-{u}", f"f-{u}", "s"])
+        for u in self.offgraph_start:
+            out.append([f"o-{u}", f"f-{u}", "s"])
         for i, (gname, info) in enumerate(self.group_nodes.items()):
             gid = f"g-{i}"
             out += [[f"f-{u}", gid, "ga"] for u in info["adds"]]
             out += [[f"f-{u}", gid, "gr"] for u in info["removes"] if u not in info["adds"]]
             out += [[gid, f"t-{u}", "gt"] for u in info["triggers"]]
         key = lambda u: (self.name(u).lower(), u)
-        for v in sorted(self.callers, key=key):   # sorted, so the layout is the same on every run
-            for u in sorted(self.callers[v], key=key):
+        for v in sorted(self.all_callers, key=key):   # sorted, so the layout is the same on every run
+            for u in sorted(self.all_callers[v], key=key):
                 if u in self.on_map and v in self.on_map:
                     out.append([f"f-{u}", f"f-{v}", "s"])
         solid = {(a, b) for a, b, _ in out}
@@ -754,8 +799,7 @@ def tag_pill(m, u):
 
 def flow_card(m, u):
     cls = "card" if m.tagged(u) else "card untagged"
-    attrs = "data-static"
-    return (f'<article class="{cls}" {attrs}><div class="ch"><h3>{esc(m.name(u))}</h3>{tag_pill(m, u)}</div>'
+    return (f'<article class="{cls}"><div class="ch"><h3>{esc(m.name(u))}</h3>{tag_pill(m, u)}</div>'
             f'{flow_rows(m, u)}</article>')
 
 
@@ -766,19 +810,19 @@ def trigger_card(m, u, findings):
         groups = join(names(t.get("groups")) + names(t.get("waGroups")), 4)
         blocks.append(row("Runs", schedule_text(t, m.tz, findings)) + row("Group", groups) + row("Window", window_text(t, m.tz)))
     body = '<div class="sep"></div>'.join(blocks) + row("Starts", m.name(u))
-    kw = m.flows[u].get("keywords") or []
+    kw = m.keywords(u)
     if kw:
         body += row("Keyword", f"Also starts when a contact sends {join(kw, 20, 'or')}")
     if m.earlier_trig.get(u):
         body += f'<details><summary>Earlier runs</summary><p>{esc(typo(earlier_runs(m.earlier_trig[u], m.tz)))}</p></details>'
-    return (f'<article class="card trigger" data-static>'
+    return (f'<article class="card trigger">'
             f'<div class="ch"><h3>{esc(schedule_title(ts))}</h3><span class="pill">Active</span></div>{body}</article>')
 
 
 def keyword_card(m, u):
-    kw = m.flows[u].get("keywords") or []
+    kw = m.keywords(u)
     runs = f"When a contact sends {join(kw, 30, 'or')}"
-    return (f'<article class="card trigger" data-static>'
+    return (f'<article class="card trigger">'
             f'<div class="ch"><h3>Keyword message</h3><span class="pill">Active</span></div>'
             f'{row("Runs", runs)}{row("Starts", m.name(u))}</article>')
 
@@ -816,7 +860,7 @@ def shared_resources(m):
             if len(us) >= 2:
                 rows.append((label, k, _used_by(m, us)))
     for u in sorted(m.scope, key=m.name):
-        kw = m.flows[u].get("keywords") or []
+        kw = m.keywords(u)
         if kw and (u not in m.entry or m.active_trig.get(u)):
             rows.append(("Keywords", join(kw, 6, "or"), m.name(u)))
     for f, w in sorted(m.shared_fields.items()):
@@ -1068,7 +1112,7 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
     part_of maps a flow uuid to a part number (1 to 6); the box gets a coloured stripe for its part."""
     sizes, kinds = {}, {}
     def size(n):
-        if n[0] in "tkxs":
+        if n[0] in "tkxso":
             return TRIG_W, TRIG_H
         if n[0] == "g":
             return GROUP_W, GROUP_H
@@ -1090,7 +1134,7 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
     shift = 2 if groups else 1
     fixed = {n: L + shift for n, L in first.layer.items()}
     for a, b, _ in edges:
-        if a[0] in "tkxs":
+        if a[0] in "tkxso":
             fixed[a] = shift - 1
     for i in range(len(groups)):
         fixed[f"g-{i}"] = shift - 2
@@ -1174,7 +1218,7 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
             sched = len(info["triggers"])
             txt = (f'<text class="tname" x="{x + 12:.1f}" y="{y + 21:.1f}">{esc(wrap(gname, 19, 1)[0])}</text>'
                    f'<text class="tmeta" x="{x + 12:.1f}" y="{y + 40:.1f}">Group, {plural(sched, "schedule")}</text>')
-            card = (f'<article class="card" data-static><div class="ch"><h3>{esc(gname)}</h3><span class="tag no">Group</span></div>'
+            card = (f'<article class="card"><div class="ch"><h3>{esc(gname)}</h3><span class="tag no">Group</span></div>'
                     + row("Added by", names_of(m, info["adds"]) or "No flow on the graph")
                     + (row("Removed by", names_of(m, info["removes"]), "mv") if info["removes"] else "")
                     + row("Schedules", "Active triggers that send to this group start " + names_of(m, info["triggers"]))
@@ -1185,19 +1229,28 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
             shorts = [x[0] for x in m.setting_starts.get(u, [])]
             txt = (f'<text class="tname" x="{x + 12:.1f}" y="{y + 21:.1f}">Glific setting</text>'
                    f'<text class="tmeta" x="{x + 12:.1f}" y="{y + 40:.1f}">{esc(wrap(join(shorts, 2), 28, 1)[0])}</text>')
-            card = ('<article class="card" data-static><div class="ch"><h3>Glific setting</h3></div>'
+            card = ('<article class="card"><div class="ch"><h3>Glific setting</h3></div>'
                     + row("Starts", m.name(u))
                     + "".join(row("Runs", text) for _, text in m.setting_starts.get(u, []))
                     + row("Note", "Set in Glific under Settings, not by a trigger or keyword, so it does not appear in the trigger list.")
                     + "</article>")
             label = f"Glific setting that starts {m.name(u)}"
-        elif n.startswith("x-") and m.callers[u]:   # started only by flows left off this graph (test flows)
+        elif n.startswith("o-"):   # started by a flow that is not drawn on this graph
+            cls = "node nostart"
+            callers = sorted(map(m.name, m.all_callers[u]), key=str.lower)
+            txt = (f'<text class="tname" x="{x + 12:.1f}" y="{y + 21:.1f}">Started off this graph</text>'
+                   f'<text class="tmeta" x="{x + 12:.1f}" y="{y + 40:.1f}">{esc(wrap("By " + join(callers, 2), 28, 1)[0])}</text>')
+            card = ('<article class="card untagged"><div class="ch"><h3>Started off this graph</h3></div>'
+                    + row("Starts", m.name(u)) + row("Started by", join(callers, 6))
+                    + row("Note", "The flows that start this one are not drawn on this graph.") + "</article>")
+            label = f"{m.name(u)} is started by a flow not on this graph"
+        elif n.startswith("x-") and m.all_callers[u]:   # started only by flows left off this graph (test flows)
             cls = "node nostart"
             txt = (f'<text class="tname" x="{x + 12:.1f}" y="{y + 21:.1f}">Only test flows start it</text>'
                    f'<text class="tmeta" x="{x + 12:.1f}" y="{y + 40:.1f}">They are left off this graph</text>')
-            card = ('<article class="card untagged" data-static><div class="ch"><h3>Only test flows start it</h3></div>'
+            card = ('<article class="card untagged"><div class="ch"><h3>Only test flows start it</h3></div>'
                     + row("Starts", m.name(u))
-                    + row("Started by", join(sorted(map(m.name, m.callers[u])), 4))
+                    + row("Started by", join(sorted(map(m.name, m.all_callers[u])), 4))
                     + row("Note", "The only flows that start this one were left off this graph as tests or leftovers.")
                     + "</article>")
             label = f"Only test flows start {m.name(u)}"
@@ -1205,7 +1258,7 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
             cls = "node nostart"
             txt = (f'<text class="tname" x="{x + 12:.1f}" y="{y + 21:.1f}">No start found</text>'
                    f'<text class="tmeta" x="{x + 12:.1f}" y="{y + 40:.1f}">No trigger, keyword or flow</text>')
-            card = ('<article class="card untagged" data-static><div class="ch"><h3>No start found</h3></div>'
+            card = ('<article class="card untagged"><div class="ch"><h3>No start found</h3></div>'
                     + row("Starts", m.name(u))
                     + row("Note", "No trigger, keyword or flow in the export starts this flow. It may be the opt-in or "
                                   "opt-out flow in Glific settings, or started by hand or through the API.")
@@ -1219,7 +1272,7 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
                 line2 = "To " + (join(names(ts[0].get("groups")) + names(ts[0].get("waGroups")), 2) or "no group")
                 card = trigger_card(m, u, findings)
             else:
-                kw = m.flows[u].get("keywords") or []
+                kw = m.keywords(u)
                 line1 = "Keyword"
                 line2 = join(kw, 3, "or")
                 card = keyword_card(m, u)
@@ -1236,7 +1289,6 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
             stripe = f'<rect class="pstripe p{part_of[u]}" x="{x + 3:.1f}" y="{y + 8:.1f}" width="5" height="{h - 16}" rx="2.5"/>'
         parts.append(f'<g class="{cls}" data-id="{esc(ns + n)}" tabindex="0" role="button" aria-label="{esc(label)}">'
                      f'<rect x="{x:.1f}" y="{y:.1f}" width="{w}" height="{h}" rx="10"/>{stripe}{txt}</g>')
-        card = re.sub(r' data-id="[^"]*"', "", card)   # the box carries the id; the card copy must not
         tpls.append(f'<template id="tpl-{esc(ns + n)}">{card}</template>')
 
     svg = (f'<svg id="{ns}graph" class="fgraph" viewBox="0 0 {g.width:.0f} {g.height:.0f}" width="{g.width:.0f}" height="{g.height:.0f}" '
@@ -1353,12 +1405,6 @@ h3{font-family:var(--head);font-weight:700;font-size:19px;line-height:1.25;margi
 .ln{width:30px;height:0;border-top:2px solid var(--wire);display:inline-block}
 .ln.d{border-top-style:dashed}
 .ln.g{border-top:3px dotted var(--chat)}
-.canvas{position:relative}
-#wires{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible}
-.wire{fill:none;stroke:var(--wire);stroke-width:1.7;transition:opacity .15s,stroke .15s}
-.wire.data{stroke-dasharray:6 5}
-.wire.dim{opacity:.12}
-.wire.hot{stroke:var(--flow);stroke-width:2.6}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;transition:opacity .15s,box-shadow .15s}
 .card:focus-visible{outline:3px solid var(--flow);outline-offset:2px}
 .card.dim{opacity:.4}
@@ -1387,7 +1433,6 @@ details p{margin:6px 0 0}
 .sect{margin-top:44px}
 .sect h2{margin-bottom:6px}
 .sect>p{margin:0 0 16px;color:var(--muted);max-width:80ch}
-.strip{display:grid;grid-template-columns:1fr;gap:18px;align-items:start}
 .tbl{margin:22px 0 0;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .tbl summary{cursor:pointer;padding:10px 14px;font-family:var(--head);font-weight:700;font-size:16px}
 .tblwrap{overflow-x:auto;padding:0 14px 12px}
@@ -1448,10 +1493,8 @@ details p{margin:6px 0 0}
 .panel .card{clear:both}
 footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
 @media (min-width:1100px){
-  .strip{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 @media (min-width:700px) and (max-width:1099px){
-  .strip{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 </style>
 </head>

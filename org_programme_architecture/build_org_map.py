@@ -143,7 +143,12 @@ def _programme_step(args, flows, triggers, out_dir, org, graph_model):
         print(f"Using Claude's saved answer from {args.reuse_claude}", file=sys.stderr)
     else:
         print(f"Asking Claude ({MODEL}) to read {len(facts['flows'])} flows; this can take a few minutes...", file=sys.stderr)
-        raw, validated, notes = run_programmes(facts)
+        try:
+            raw, validated, notes = run_programmes(facts)
+        except ProgrammeError as e:
+            if getattr(e, "raw", None) is not None:   # keep the paid-for answer to inspect or reuse
+                save_json(e.raw, "claude_output.json", out_dir)
+            raise
         save_json(raw, "claude_output.json", out_dir)
     if notes:
         print(f"\nValidation dropped {len(notes)} parts of Claude's answer (listed on the page):", file=sys.stderr)

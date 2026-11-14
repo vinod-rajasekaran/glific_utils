@@ -66,8 +66,10 @@ def _client():
 def call_claude(facts, client=None, repair_errors=None, previous=None):
     """Send the facts (and, for a repair, the previous answer and its problems); return the parsed JSON."""
     client = client or _client()
-    messages = [{"role": "user", "content": "Facts about every active flow in this org, as JSON:\n\n"
-                 + json.dumps(facts, ensure_ascii=False, sort_keys=True)}]
+    # The facts are the big part of the request; caching them makes a repair call a cache read
+    messages = [{"role": "user", "content": [{"type": "text", "cache_control": {"type": "ephemeral"},
+                                              "text": "Facts about every active flow in this org, as JSON:\n\n"
+                                              + json.dumps(facts, ensure_ascii=False, sort_keys=True)}]}]
     if repair_errors is not None:
         messages += [
             {"role": "assistant", "content": json.dumps(previous, ensure_ascii=False)},
@@ -97,9 +99,12 @@ def call_claude(facts, client=None, repair_errors=None, previous=None):
     # Join every text block: after a mid-stream refusal fallback the answer continues in a new block
     text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
     try:
-        return json.loads(text)
+        out = json.loads(text)
     except ValueError as e:
         raise ProgrammeError("Claude's answer was not valid JSON") from e
+    if isinstance(out, dict) and isinstance(getattr(msg, "model", None), str):
+        out["_meta"] = {"model": msg.model}   # a server-side fallback can answer with another model
+    return out
 
 
 def _slug(text, taken):
@@ -134,12 +139,16 @@ def validate(out, facts):
         for s in items if isinstance(items, list) else []:
             if not isinstance(s, dict) or not str(s.get("text") or "").strip():
                 continue
-            bad = [x for x in s.get("refs", []) if x not in known_refs] + [x for x in s.get("evidence", []) if x not in evidence_ids]
+            refs = [x for x in s.get("refs") or [] if isinstance(x, str)] if isinstance(s.get("refs"), list) else []
+            evidence = [x for x in s.get("evidence") or [] if isinstance(x, str)] if isinstance(s.get("evidence"), list) else []
+            bad = [x for x in refs if x not in known_refs] + [x for x in evidence if x not in evidence_ids]
             if bad:
                 problems.append(f"{where}: unknown IDs {', '.join(map(str, bad[:5]))} in \"{str(s['text'])[:60]}\"")
-            s = dict(s, refs=[x for x in s.get("refs", []) if x in known_refs],
-                     evidence=[x for x in s.get("evidence", []) if x in evidence_ids])
-            if not s["evidence"] and s.get("confidence") != "guess":
+            # Keep only checked fields: text as a string, known IDs, and a confidence from the list
+            conf = s.get("confidence") if s.get("confidence") in CONFIDENCE else "guess"
+            s = {"text": str(s["text"]), "refs": [x for x in refs if x in known_refs],
+                 "evidence": [x for x in evidence if x in evidence_ids], "confidence": conf}
+            if not s["evidence"] and s["confidence"] != "guess":
                 problems.append(f"{where}: dropped \"{str(s['text'])[:60]}\" because none of its evidence is in the facts")
                 continue
             kept.append(s)
@@ -232,7 +241,9 @@ def validate(out, facts):
 
     programmes = _programmes(out, use_cases, statements, problems, slug_of)
 
-    return ({"org_summary": org_summary, "programmes": programmes, "use_cases": use_cases, "flows": flows,
+    meta = out.get("_meta") if isinstance(out.get("_meta"), dict) else {}
+    model = meta.get("model") if isinstance(meta.get("model"), str) else MODEL
+    return ({"model": model, "org_summary": org_summary, "programmes": programmes, "use_cases": use_cases, "flows": flows,
              "not_placed": not_placed, "edges": edges, "systems": systems}, problems)
 
 
@@ -303,15 +314,27 @@ def run_programmes(facts, client=None):
         validated, problems = validate(raw, facts)
     except ProgrammeError as e:
         problems, validated = [str(e)], None
+    try:
+        return _repair_if_needed(facts, client, raw, validated, problems)
+    except ProgrammeError as e:
+        if getattr(e, "raw", None) is None:
+            e.raw = raw            # so the caller can save the paid-for answer even when it is unusable
+        raise
+
+
+def _repair_if_needed(facts, client, raw, validated, problems):
     if not _serious(problems):
         return raw, validated, problems
+    raw2 = None
     try:
         raw2 = call_claude(facts, client, repair_errors=problems, previous=raw)
         validated2, problems2 = validate(raw2, facts)
     except ProgrammeError as e:
         if validated is None:
+            e.raw = raw2 if raw2 is not None else raw
             raise
         return raw, validated, problems + [f"The repair call failed ({e}), so Claude's first answer is shown."]
+
     def score(v, probs):   # more flows placed first, then fewer problems that matter
         return (sum(len(u["flows"]) for u in v["use_cases"]), -len(_serious(probs)))
     if validated is not None and score(validated, problems) > score(validated2, problems2):

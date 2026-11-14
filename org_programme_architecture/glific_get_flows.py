@@ -225,6 +225,16 @@ def redact_nodes(nodes):
     return count + n
 
 
+def redact_definition(definition):
+    """Blank credentials in a flow definition: webhook details in its nodes, and tokens anywhere,
+    including the editor's sticky notes in _ui. Returns the count."""
+    count = redact_nodes(definition.get("nodes") or [])
+    if isinstance(definition.get("_ui"), dict):
+        definition["_ui"], n = _scrub(definition["_ui"])
+        count += n
+    return count
+
+
 def get_graph(flow, token):
     result = post("/api", {"query": EXPORT_QUERY, "variables": {"id": flow["id"]}}, token)
     payload = (result.get("data") or {}).get("exportFlow") or {}
@@ -237,8 +247,8 @@ def get_graph(flow, token):
         export = json.loads(export)
     definition = find_definition(export, flow["uuid"]) or {}
 
+    redacted = redact_definition(definition)
     nodes = definition.get("nodes", [])
-    redacted = redact_nodes(nodes)
     if redacted:
         print(f"  {flow['name']}: blanked {redacted} credential value(s)", file=sys.stderr)
     # Edges: each node exit points to a destination node (None = flow ends there)
@@ -273,7 +283,12 @@ def fetch_flows(token):
 def redact_file(path):
     """Blank credentials in a flows.json saved earlier, rewriting it in place."""
     flows = json.loads(Path(path).read_text())
-    total = sum(redact_nodes(f.get("nodes") or []) for f in flows)
+    total = 0
+    for f in flows:
+        total += redact_nodes(f.get("nodes") or [])
+        if isinstance(f.get("ui"), dict):
+            f["ui"], n = _scrub(f["ui"])
+            total += n
     Path(path).write_text(json.dumps(flows, indent=2))
     print(f"Blanked {total} credential value(s) in {path}", file=sys.stderr)
 
