@@ -140,9 +140,9 @@ class F8OnlyStartedByHiddenFlow(unittest.TestCase):
     def test_flow_started_only_by_hidden_flow_gets_a_box(self):
         m = model()
         save, start = U(7), U(6)                     # Survey start enters Survey save
-        m.graph_view({save}, ignore_callers={start})
-        self.assertIn(save, m.no_start)
-        svg, _ = ra.graph_svg(m, m.edges(), [])
+        v = m.graph_view({save}, ignore_callers={start})
+        self.assertIn(save, v.no_start)
+        svg, _ = ra.graph_svg(m, v, [])
         self.assertIn("Only test flows start it", svg)
 
 

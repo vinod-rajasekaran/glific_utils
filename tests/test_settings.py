@@ -55,9 +55,9 @@ class ModelTest(unittest.TestCase):
 
     def test_setting_flow_is_not_no_start(self):
         m = model(scope_all=True)
-        m.graph_view({U(8)})
-        self.assertNotIn(U(8), m.no_start)
-        self.assertIn([f"s-{U(8)}", f"f-{U(8)}", "s"], m.edges())
+        v = m.graph_view({U(8)})
+        self.assertNotIn(U(8), v.no_start)
+        self.assertIn([f"s-{U(8)}", f"f-{U(8)}", "s"], v.edges(m))
 
     def test_graph_page_shows_setting_box(self):
         flows = json.loads((FIX / "flows.json").read_text())

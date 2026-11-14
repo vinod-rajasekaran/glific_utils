@@ -79,7 +79,7 @@ def print_tables(m, out):
     print(f"\nScope: {len(m.scope)} flows ({'tag ' + m.st.tag if m.st.tag else 'from triggers and keywords'})", file=out)
     print(f"  {'column':8} {'map':4} {'tagged':6} {'called':>6} {'starts':>6}  flow", file=out)
     for u in sorted(m.scope, key=lambda u: (m.columns[u], m.name(u).lower())):
-        print(f"  {m.columns[u]:8} {'yes' if u in m.on_map else 'no':4} {'yes' if m.tagged(u) else 'no':6} "
+        print(f"  {m.columns[u]:8} {'yes' if u in m.view.on_map else 'no':4} {'yes' if m.tagged(u) else 'no':6} "
               f"{sum(m.callers[u].values()):>6} {len([1 for v, _ in m.sum[u]['starts'] if v in m.scope and v != u]):>6}  {m.name(u)}", file=out)
     print(f"\nActive triggers ({sum(map(len, m.active_trig.values()))}):", file=out)
     for u, ts in m.active_trig.items():
@@ -89,9 +89,9 @@ def print_tables(m, out):
     print(f"\nData links: {links}", file=out)
 
 
-def graph_section(m, edges, findings):
+def graph_section(m, findings):
     """The map drawn as a graph: small nodes, edges laid out left to right, details on click."""
-    svg, tpls = graph_svg(m, edges, findings)
+    svg, tpls = graph_svg(m, m.view, findings)
     html_ = ('<p class="ghint">Each box is a flow, and time runs left to right. Solid arrows start a flow, '
              'dashed arrows hand over data through a contact field. Select a box to read what it does.</p>'
              f'<div class="gscroll">{svg}</div>'
@@ -105,10 +105,10 @@ def render_html(flows, triggers, settings=None, out=None, org=None):
     st = settings or Settings()
     m = Model(flows, triggers, st, org=org)
     findings = m.findings
-    edges = m.edges()
+    edges = m.view.edges(m)
 
     edges_js = json.dumps(edges).replace("</", "<\\/")
-    map_html, script = graph_section(m, edges, findings)
+    map_html, script = graph_section(m, findings)
     script = Template(script).substitute(edges=edges_js)
 
     for u in sorted(m.scope, key=m.name):

@@ -33,7 +33,7 @@ def names_of(m, us):
     return join([m.name(u) for u in us], 6)
 
 
-def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
+def graph_svg(m, view, findings, ns="", faded=frozenset(), part_of=None):
     """The graph as an SVG string plus one <template> per box holding its full card. Every id in
     both is prefixed with ns, so several graphs can share a page. Flows in faded are drawn faded.
     part_of maps a flow uuid to a part number (1 to 6); the box gets a coloured stripe for its part."""
@@ -44,12 +44,13 @@ def graph_svg(m, edges, findings, ns="", faded=frozenset(), part_of=None):
         if n[0] == "g":
             return GROUP_W, GROUP_H
         return NODE_W, NODE_H + (0 if m.tagged(n[2:]) else 16)   # room for the tag line
+    edges = view.edges(m)
     for a, b, k in edges:
         sizes[a], sizes[b] = size(a), size(b)
         kinds[(a, b)] = k
-    for u in sorted(m.on_map, key=lambda u: (m.name(u).lower(), u)):
+    for u in sorted(view.on_map, key=lambda u: (m.name(u).lower(), u)):
         sizes.setdefault(f"f-{u}", size(f"f-{u}"))
-    groups = list(m.group_nodes.items())
+    groups = list(view.group_nodes.items())
     # Edges into a group close loops in time (a flow adds contacts to the group its own schedule
     # sends to). Groups go in the first column, as the pools schedules draw from, and the edges
     # that fill them run back to that column.

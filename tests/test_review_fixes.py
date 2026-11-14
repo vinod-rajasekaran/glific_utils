@@ -31,8 +31,8 @@ def model():
 class C1NoFalseNoStart(unittest.TestCase):
     def test_neighbour_started_elsewhere_has_no_no_start_box(self):
         m = model()
-        m.graph_view({U(3), U(2)})       # Weekly tip and Profile; Welcome (which starts Profile) is off the graph
-        self.assertNotIn(U(2), m.no_start)
+        v = m.graph_view({U(3), U(2)})       # Weekly tip and Profile; Welcome (which starts Profile) is off the graph
+        self.assertNotIn(U(2), v.no_start)
 
 
 class I1StepNeverLosesGraphPage(unittest.TestCase):

@@ -35,17 +35,15 @@ class GraphSubsetTest(unittest.TestCase):
     def test_graph_view_limits_nodes(self):
         m = model(scope_all=True)
         keep = {uid(m, "Welcome"), uid(m, "Profile")}
-        m.graph_view(keep)
-        self.assertEqual(m.on_map, keep)
-        ids = {n for e in m.edges() for n in e[:2]}
+        v = m.graph_view(keep)
+        self.assertEqual(v.on_map, keep)
+        ids = {n for e in v.edges(m) for n in e[:2]}
         self.assertNotIn(f"f-{uid(m, 'Weekly tip')}", ids)
 
     def test_graph_svg_namespaces_ids(self):
         m = model(scope_all=True)
-        m.graph_view({uid(m, "Welcome"), uid(m, "Profile")})
-        a, ta = ra.graph_svg(m, m.edges(), [], ns="u1-")
-        m.graph_view({uid(m, "Weekly tip"), uid(m, "Ask AI")})
-        b, tb = ra.graph_svg(m, m.edges(), [], ns="u2-")
+        a, ta = ra.graph_svg(m, m.graph_view({uid(m, "Welcome"), uid(m, "Profile")}), [], ns="u1-")
+        b, tb = ra.graph_svg(m, m.graph_view({uid(m, "Weekly tip"), uid(m, "Ask AI")}), [], ns="u2-")
         ids = lambda s: set(re.findall(r'(?:\bid|data-id)="([^"]+)"', s))
         self.assertTrue(ids(a + "".join(ta)))
         self.assertFalse(ids(a + "".join(ta)) & ids(b + "".join(tb)))
@@ -53,8 +51,7 @@ class GraphSubsetTest(unittest.TestCase):
     def test_faded_class(self):
         m = model(scope_all=True)
         welcome, profile = uid(m, "Welcome"), uid(m, "Profile")
-        m.graph_view({welcome, profile})
-        svg, _ = ra.graph_svg(m, m.edges(), [], ns="u1-", faded={profile})
+        svg, _ = ra.graph_svg(m, m.graph_view({welcome, profile}), [], ns="u1-", faded={profile})
         self.assertRegex(svg, rf'<g class="node flow[^"]*faded[^"]*" data-id="u1-f-{profile}"')
 
 
@@ -71,10 +68,10 @@ class GraphSubsetTest(unittest.TestCase):
     def test_no_start_boxes_for_neighbours(self):
         m = model(scope_all=True)
         copy = uid(m, "Ask AI copy")                     # has the keyword "test"
-        m.graph_view({uid(m, "Welcome"), uid(m, "Profile"), copy}, no_starts={copy})
-        self.assertNotIn(copy, m.trigger_flows)
-        self.assertNotIn(copy, m.no_start)
-        self.assertNotIn(f"k-{copy}", {n for e in m.edges() for n in e[:2]})
+        v = m.graph_view({uid(m, "Welcome"), uid(m, "Profile"), copy}, no_starts={copy})
+        self.assertNotIn(copy, v.trigger_flows)
+        self.assertNotIn(copy, v.no_start)
+        self.assertNotIn(f"k-{copy}", {n for e in v.edges(m) for n in e[:2]})
 
 
 if __name__ == "__main__":

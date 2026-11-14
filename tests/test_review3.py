@@ -136,8 +136,8 @@ class C1CallersAcrossExport(unittest.TestCase):
             f["tag"] = {"label": "Only"} if f["name"] == "Weekly tip" else None
         m = model(flows, triggers, tag="Only")
         profile = next(u for u in m.flows if m.name(u) == "Profile")
-        self.assertIn(profile, m.on_map)
-        self.assertNotIn(profile, m.no_start)
+        self.assertIn(profile, m.view.on_map)
+        self.assertNotIn(profile, m.view.no_start)
 
 
 class C2C3SettingFlows(unittest.TestCase):
@@ -146,15 +146,15 @@ class C2C3SettingFlows(unittest.TestCase):
     def test_default_flow_on_graph_without_tag(self):
         m = model(org=self.ORG)
         old = next(u for u in m.flows if m.name(u) == "Old draft")
-        self.assertIn(old, m.on_map)
-        self.assertIn(old, m.setting_flows)
+        self.assertIn(old, m.view.on_map)
+        self.assertIn(old, m.view.setting_flows)
 
     def test_tagged_setting_flow_on_graph(self):
         flows, triggers = load()
         by_name(flows, "Old draft")["tag"] = {"label": "Demo"}
         m = model(flows, triggers, org=self.ORG, tag="Demo")
         old = next(u for u in m.flows if m.name(u) == "Old draft")
-        self.assertIn(old, m.setting_flows)
+        self.assertIn(old, m.view.setting_flows)
 
 
 class C4CapKeepsEntryFlows(unittest.TestCase):
@@ -166,9 +166,9 @@ class C4CapKeepsEntryFlows(unittest.TestCase):
             m = model(scope_all=True)
         finally:
             model_module.GRAPH_CAP = saved
-        self.assertLessEqual(len(m.on_map), 6)        # the cap is really applied (plus group fillers)
+        self.assertLessEqual(len(m.view.on_map), 6)        # the cap is really applied (plus group fillers)
         for name in ("Weekly tip", "Welcome", "Survey start"):
-            self.assertIn(next(u for u in m.flows if m.name(u) == name), m.on_map, name)
+            self.assertIn(next(u for u in m.flows if m.name(u) == name), m.view.on_map, name)
 
 
 class C5InteractiveText(unittest.TestCase):
@@ -205,7 +205,7 @@ class C11NoDuplicateGroupEdges(unittest.TestCase):
         extra = copy.deepcopy(next(t for t in triggers if t["isActive"]))
         extra["id"] = "599"
         m = model(flows, triggers + [extra], scope_all=True)
-        gt = [e for e in m.edges() if e[2] == "gt"]
+        gt = [e for e in m.view.edges(m) if e[2] == "gt"]
         self.assertEqual(len(gt), len(set(map(tuple, gt))))
 
 

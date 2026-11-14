@@ -38,7 +38,7 @@ def shared_resources(m):
                 rows.append((label, k, _used_by(m, us)))
     for u in sorted(m.scope, key=m.name):
         kw = m.keywords(u)
-        if kw and (u not in m.entry or m.active_trig.get(u)):
+        if kw and (u not in m.view.entry or m.active_trig.get(u)):
             rows.append(("Keywords", join(kw, 6, "or"), m.name(u)))
     for f, w in sorted(m.shared_fields.items()):
         rows.append(("Field", f, f"written by {plural(len(w), 'flow')}: {_used_by(m, w, 3)}"))
@@ -91,7 +91,7 @@ def tagging_gaps(m):
         parts.append(f"{join(linked, 10)} {'starts' if len(linked) == 1 else 'start'} a flow on the map without the {m.st.tag} tag, "
                      f"so {'it was' if len(linked) == 1 else 'they were'} added. Check whether the tag was missed; "
                      f"{'its' if len(linked) == 1 else 'their'} starts of flows outside the map are not drawn.")
-    via_group = sorted(m.name(u) for u in m.linked_group if not m.tagged(u))
+    via_group = sorted(m.name(u) for u in m.view.linked_group if not m.tagged(u))
     if via_group and m.st.tag:
         parts.append(f"{join(via_group, 10)} {'adds' if len(via_group) == 1 else 'add'} contacts to a group that a schedule on the map sends to, "
                      f"so {'it decides' if len(via_group) == 1 else 'they decide'} who that schedule reaches; check whether the {m.st.tag} tag was missed.")

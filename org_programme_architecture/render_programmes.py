@@ -246,11 +246,11 @@ def programme_view(cx, prog, findings, tag):
     # of them read or touch this programme's data instead
     tests = {f for f in near if cx.prog_kind.get(cx.prog_of.get(f)) == "tests"}
     near -= tests
-    m.graph_view(set(members) | near, no_starts=near, ignore_callers=tests)
-    svg, tpls = graph_svg(m, m.edges(), findings, ns=f"{pid}-", faded=near, part_of=part_of)
+    view = m.graph_view(set(members) | near, no_starts=near, ignore_callers=tests)
+    svg, tpls = graph_svg(m, view, findings, ns=f"{pid}-", faded=near, part_of=part_of)
     test_note = test_readers_note(cx, set(members), tests)
     panes = "".join(f'<template id="pane-{esc(pid)}-f-{esc(fid)}">{flow_pane(cx, fid, findings)}</template>'
-                    for fid in sorted(m.on_map, key=lambda x: cx.flow[x]["name"].lower()) if fid in cx.flow)
+                    for fid in sorted(view.on_map, key=lambda x: cx.flow[x]["name"].lower()) if fid in cx.flow)
     sections = ""
     if len(parts) > 1:
         for k, u in enumerate(parts):
@@ -296,14 +296,14 @@ GRAPH_LEGEND = ('<div class="legend" aria-label="Legend"><span><i class="sw t"><
                 '<span><i class="ln d"></i>Hands over data</span><span><i class="ln g"></i>Fills or empties a group</span></div>')
 
 
-def graph_view(gm, st, findings):
+def full_graph_view(gm, st, findings):
     """The whole flow graph (the tag's scope, or triggers and keywords without a tag) as one more view."""
     # "-graph" can never be a programme id (slugs never start with "-"), and the page script
     # derives each graph's id prefix from its section id, so the two must match
-    svg, tpls = graph_svg(gm, gm.edges(), findings, ns=f"{FULL_GRAPH}-")
+    svg, tpls = graph_svg(gm, gm.view, findings, ns=f"{FULL_GRAPH}-")
     start = f"the flows tagged {st.tag}" if st.tag else "active triggers and keywords"
     story = (f'<div class="pane-story"><h3 class="ph">How to read it</h3><p class="muted">The graph starts from {esc(start)} '
-             f'and shows {plural(len(gm.on_map), "flow")}. Time runs left to right: how each flow starts, then what it starts '
+             f'and shows {plural(len(gm.view.on_map), "flow")}. Time runs left to right: how each flow starts, then what it starts '
              'or hands data to. Select a box to see that flow in detail.</p></div>')
     below = shared_resources(gm) + strip_section(gm) + tagging_gaps(gm)
     return (f'<section class="ucview" id="uc-{FULL_GRAPH}" hidden>'
@@ -329,10 +329,10 @@ def render_programme_page(m, facts, uc, dropped, st, graph_model=None):
         cards += (f'<a class="uccard{" muted-card" if p["kind"] == "tests" else ""}" href="#uc-{esc(p["id"])}">'
                   f'<h3>{t(p["name"])}</h3><p><span class="reading">Claude\u2019s reading</span><br>{t(p["summary"])}</p>'
                   f'{chips}<div class="pills">{pills(cx, whole, st.tag, brief=True)}</div></a>')
-    shared = shared_resources(m)     # before the views, which change the model's graph
+    shared = shared_resources(m)
     views = "".join(programme_view(cx, p, findings, st.tag) for p in order)
     if graph_model is not None:
-        views += graph_view(graph_model, st, findings)
+        views += full_graph_view(graph_model, st, findings)
         cards += (f'<a class="uccard graphcard" href="#uc-{FULL_GRAPH}"><h3>Full flow graph</h3>'
                   '<p>Every flow, how it starts and what it leads to, straight from the export.</p></a>')
 

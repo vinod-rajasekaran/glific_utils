@@ -25,8 +25,7 @@ class StartColumnTest(unittest.TestCase):
     def test_all_start_boxes_share_one_column(self):
         flows, triggers = load()
         m = ra.Model(flows, triggers, ra.Settings(scope_all=True, today=date(2026, 11, 13)))
-        m.graph_view(set(m.flows))
-        svg, _ = ra.graph_svg(m, m.edges(), [])
+        svg, _ = ra.graph_svg(m, m.graph_view(set(m.flows)), [])
         xs = {float(x) for x in re.findall(r'data-id="[tkxs]-[^"]+"[^>]*><rect x="([\d.]+)"', svg)}
         self.assertGreaterEqual(len(re.findall(r'data-id="[tkxs]-', svg)), 3)
         self.assertEqual(len(xs), 1, xs)

@@ -41,7 +41,7 @@ def flow_rows(m, u):
         if w == u:
             by_reader[v].append(fld)
     feeds = [f"{m.name(v)} reads {join(fs, 4)}" for v, fs in by_reader.items()]
-    reads = [f"reads {fld} set by {m.name(w)}" for w, v, fld in m.data_links if v == u and w not in m.on_map]
+    reads = [f"reads {fld} set by {m.name(w)}" for w, v, fld in m.data_links if v == u and w not in m.view.on_map]
     notes = []
     if not f.get("nodes"):
         notes.append("No definition was exported for this flow")
@@ -54,7 +54,7 @@ def flow_rows(m, u):
     if reads:
         notes.append(sentence(join(reads, 2)))
     trig = ""
-    if m.active_trig.get(u) and u not in m.on_map:
+    if m.active_trig.get(u) and u not in m.view.on_map:
         trig = "Active: " + "; ".join(schedule_text(t, m.tz, m.findings) for t in m.active_trig[u])
     elif u not in m.active_trig and m.earlier_trig.get(u):
         trig = "None active. " + earlier_runs(m.earlier_trig[u], m.tz)

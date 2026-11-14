@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from flow_reading import FlowGraph, mask_summary, summarise
+from graph_view import build_view
 from privacy import mask, staff_names
 from text import fmt_day, join, names, parse_tz, parse_utc, plural
 
@@ -62,11 +63,6 @@ class Model:
         self._scope()
         self._links()
         self._roles()
-        self.no_start = []
-        self.offgraph_start = []
-        self.setting_flows = []
-        self.group_nodes = {}
-        self.linked_group = set()
         self._graph_map()
 
     def name(self, u):
@@ -203,87 +199,14 @@ class Model:
         overflow = sorted(order[GRAPH_CAP:], key=by_name)
         if overflow:
             self.findings.append(f"{plural(len(overflow), 'flow')} moved from the graph to the strip to keep it readable: {join(map(self.name, overflow), 8)}.")
-        self.strip = sorted((u for u in sc if u not in on and u not in overflow), key=by_name) + overflow
-        self.graph_view(on, add_fillers=True)
-        self.strip = [u for u in self.strip if u not in self.on_map]
+        self.view = self.graph_view(on, add_fillers=True)
+        # Flows that fill a group a schedule on the graph sends to join the scope, and the table
+        self.scope |= self.view.linked_group
+        for u in self.view.linked_group:
+            self.columns[u] = "group"
+        self.strip = [u for u in sorted((u for u in sc if u not in on and u not in overflow), key=by_name) + overflow
+                      if u not in self.view.on_map]
 
     def graph_view(self, flow_ids, add_fillers=False, no_starts=frozenset(), ignore_callers=frozenset()):
-        """Put exactly these flows on the graph and work out their trigger, keyword, no-start and
-        group boxes. With add_fillers, flows outside the set that add contacts to a group a
-        schedule on the graph sends to are added too. Flows in no_starts (faded neighbours) get
-        no start boxes and do not pull their schedules' groups onto the graph. Callers in
-        ignore_callers (test flows left off the graph) do not count as a way the flow starts."""
-        on = set(flow_ids)
-        by_name = lambda u: self.name(u).lower()
-        self.on_map = on
-        # Groups: a group that an active trigger on the graph sends to gets its own box, when some
-        # flow adds contacts to it or removes them. Flows outside the scope that add contacts to it
-        # join the graph, since they decide who the schedule reaches.
-        targets = defaultdict(list)
-        for u in sorted(on - set(no_starts), key=by_name):
-            for t in self.active_trig.get(u, []):
-                for gname in names(t.get("groups")):
-                    if u not in targets[gname]:
-                        targets[gname].append(u)
-        self.linked_group = set()
-        movers = defaultdict(lambda: {"into": [], "out of": []})
-        for u in sorted(self.flows, key=by_name):
-            for direction, gs, _ in self.sum[u]["moves"]:
-                for gname in gs:
-                    if gname not in targets:
-                        continue
-                    if u not in on:
-                        if not add_fillers or direction != "into" or len(on) >= GRAPH_CAP:
-                            continue
-                        on.add(u)
-                        self.linked_group.add(u)
-                        self.scope.add(u)
-                        self.columns[u] = "group"
-                    if u not in movers[gname][direction]:
-                        movers[gname][direction].append(u)
-        self.group_nodes = {gname: {"adds": movers[gname]["into"], "removes": movers[gname]["out of"], "triggers": targets[gname]}
-                            for gname in sorted(movers)}
-
-        called = {u for u in on if any(c in on for c in self.callers[u])}
-        # a keyword box only where the keyword is how the flow starts; otherwise its card lists the keywords
-        own = on - set(no_starts)
-        self.trigger_flows = sorted((u for u in own if self.active_trig.get(u) or (self.keywords(u) and u not in called)),
-                                    key=by_name)
-        # Flows that Glific's organisation settings start get a "Glific setting" box
-        self.setting_flows = sorted((u for u in own if u in self.setting_starts), key=by_name)
-        # A flow with no start box and no caller on this graph: "No start found" when nothing in the
-        # export starts it (or only ignored test flows do); a "Started off this graph" box when a
-        # flow that is not drawn here starts it.
-        unstarted = [u for u in own if u not in self.trigger_flows and u not in self.setting_starts
-                     and not (set(self.all_callers[u]) - set(ignore_callers)) & on]
-        self.offgraph_start = sorted((u for u in unstarted if set(self.all_callers[u]) - set(ignore_callers)), key=by_name)
-        self.no_start = sorted((u for u in unstarted if u not in self.offgraph_start), key=by_name)
-        self.entry = [u for u in self.trigger_flows if u not in called]
-
-    def edges(self):
-        out = []
-        for u in self.trigger_flows:
-            out.append([f"t-{u}" if self.active_trig.get(u) else f"k-{u}", f"f-{u}", "s"])
-        for u in self.setting_flows:
-            out.append([f"s-{u}", f"f-{u}", "s"])
-        for u in self.no_start:
-            out.append([f"x-{u}", f"f-{u}", "s"])
-        for u in self.offgraph_start:
-            out.append([f"o-{u}", f"f-{u}", "s"])
-        for i, (gname, info) in enumerate(self.group_nodes.items()):
-            gid = f"g-{i}"
-            out += [[f"f-{u}", gid, "ga"] for u in info["adds"]]
-            out += [[f"f-{u}", gid, "gr"] for u in info["removes"] if u not in info["adds"]]
-            out += [[gid, f"t-{u}", "gt"] for u in info["triggers"]]
-        key = lambda u: (self.name(u).lower(), u)
-        for v in sorted(self.all_callers, key=key):   # sorted, so the layout is the same on every run
-            for u in sorted(self.all_callers[v], key=key):
-                if u in self.on_map and v in self.on_map:
-                    out.append([f"f-{u}", f"f-{v}", "s"])
-        solid = {(a, b) for a, b, _ in out}
-        for u, v, _ in self.data_links:
-            pair = (f"f-{u}", f"f-{v}")
-            if u in self.on_map and v in self.on_map and pair not in solid and pair[::-1] not in solid:
-                solid.add(pair)
-                out.append([*pair, "d"])
-        return out
+        """The boxes and edges for exactly these flows, as a GraphView. Nothing on the model changes."""
+        return build_view(self, flow_ids, add_fillers, no_starts, ignore_callers, cap=GRAPH_CAP)
