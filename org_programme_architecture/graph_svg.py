@@ -90,7 +90,7 @@ def _sizes(m, view, edges):
     sizes = {}
     for a, b, _ in edges:
         sizes[a], sizes[b] = size(a), size(b)
-    for u in sorted(view.on_map, key=lambda u: (m.name(u).lower(), u)):
+    for u in sorted(view.on_map, key=m.name_key):
         sizes.setdefault(f"f-{u}", size(f"f-{u}"))
     return sizes
 

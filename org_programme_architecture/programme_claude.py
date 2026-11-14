@@ -283,7 +283,7 @@ class _Checker:
         its own, and that is reported."""
         by_id = {u["id"]: u for u in use_cases}
         if not isinstance(out.get("programmes"), list):
-            return [_wrap(u) for u in use_cases]
+            return [wrap_use_case(u) for u in use_cases]
         owner, programmes, taken = {}, [], set()
         for p in _items(out["programmes"]):
             name = str(p.get("name") or "Unnamed programme")
@@ -311,11 +311,12 @@ class _Checker:
         for u in use_cases:
             if u["id"] not in owner:
                 self.problems.append(f"use case {u['name']} is not in any programme, so it is shown as its own")
-                programmes.append(_wrap(u, {p["id"] for p in programmes}))
+                programmes.append(wrap_use_case(u, {p["id"] for p in programmes}))
         return programmes
 
 
-def _wrap(u, taken=()):
+def wrap_use_case(u, taken=()):
+    """A programme of one: the use case as its only part."""
     pid = u["id"] if u["id"] not in taken else _slug(u["id"], set(taken))
     return {"id": pid, "name": u["name"], "summary": u["summary"], "kind": u["kind"], "parts": [u["id"]],
             "story": [], "watch": [], "confidence": u["confidence"]}

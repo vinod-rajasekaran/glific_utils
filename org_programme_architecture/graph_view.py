@@ -37,7 +37,7 @@ class GraphView:
             out += [[f"f-{u}", gid, "ga"] for u in info["adds"]]
             out += [[f"f-{u}", gid, "gr"] for u in info["removes"] if u not in info["adds"]]
             out += [[gid, f"t-{u}", "gt"] for u in info["triggers"]]
-        key = lambda u: (m.name(u).lower(), u)
+        key = m.name_key
         for v in sorted(m.all_callers, key=key):   # sorted, so the layout is the same on every run
             for u in sorted(m.all_callers[v], key=key):
                 if u in self.on_map and v in self.on_map:
@@ -59,7 +59,7 @@ def build_view(m, flow_ids, add_fillers=False, no_starts=frozenset(), ignore_cal
     ignore_callers (test flows left off the graph) do not count as a way the flow starts.
     Group fillers stop being added once the graph holds cap flows."""
     on = set(flow_ids)
-    by_name = lambda u: m.name(u).lower()
+    by_name = m.by_name
     view = GraphView(on_map=on)
     # Groups: a group that an active trigger on the graph sends to gets its own box, when some
     # flow adds contacts to it or removes them. Flows outside the scope that add contacts to it

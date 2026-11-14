@@ -33,7 +33,7 @@ SECRET = re.compile(
 VIRAMA_ETC = {"\u094d", "\u09cd", "\u0a4d", "\u0acd", "\u0b4d", "\u0bcd", "\u0c4d", "\u0ccd", "\u0d4d", "\u200c", "\u200d"}
 
 
-def _host(url):
+def host_of(url):
     text = url if "://" in url else "http://" + url
     try:
         return urlsplit(text).hostname or "[link]"
@@ -59,8 +59,8 @@ def mask(text, staff=()):
     """Personal data and secrets out of one piece of text; nothing is cut."""
     out = str(text or "")
     out = SECRET.sub("[secret]", out)                         # before links, so tokens in paths go too
-    out = URL.sub(lambda mm: _host(mm.group(0)), out)         # before emails, so user:pw@host links go whole
-    out = BARE_LINK.sub(lambda mm: _host(mm.group(0)), out)
+    out = URL.sub(lambda mm: host_of(mm.group(0)), out)         # before emails, so user:pw@host links go whole
+    out = BARE_LINK.sub(lambda mm: host_of(mm.group(0)), out)
     out = EMAIL.sub("[email]", out)
     names = set()
     for n in staff:

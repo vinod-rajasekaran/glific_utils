@@ -18,7 +18,7 @@ from graph_svg import graph_svg
 from render_graph import PAGE, _Balance
 from sections import context_section, shared_resources, strip_section, tagging_gaps
 from text import esc, fmt_day, join, plural, typo
-from programme_claude import MODEL
+from programme_claude import MODEL, wrap_use_case
 
 BASE_CSS = re.search(r"<style>(.*?)</style>", PAGE, re.S).group(1)
 ROLE_LABEL = {"core": "Core", "helper": "Helper", "shared": "Shared", "test": "Test", "leftover": "Leftover", "unknown": "Role unclear"}
@@ -42,9 +42,7 @@ class _Ctx:
         self.uc_of = {fid: u["id"] for u in uc["use_cases"] for fid in u["flows"]}
         self.uc_name = {u["id"]: u["name"] for u in uc["use_cases"]}
         self.use_case = {u["id"]: u for u in uc["use_cases"]}
-        self.programmes = uc.get("programmes") or [
-            {"id": u["id"], "name": u["name"], "summary": u["summary"], "kind": u["kind"], "parts": [u["id"]],
-             "story": [], "watch": [], "confidence": u["confidence"]} for u in uc["use_cases"]]
+        self.programmes = uc.get("programmes") or [wrap_use_case(u) for u in uc["use_cases"]]
         self.prog_of_uc = {pid: p["id"] for p in self.programmes for pid in p["parts"]}
         self.prog_of = {fid: self.prog_of_uc[u] for fid, u in self.uc_of.items() if u in self.prog_of_uc}
         self.prog_name = {p["id"]: p["name"] for p in self.programmes}
@@ -212,6 +210,11 @@ def flow_pane(cx, fid, findings):
             + card)
 
 
+def programme_whole(prog, parts):
+    """A programme as one use case for the pills: all its parts' flows and every concern."""
+    return {"flows": [fid for u in parts for fid in u["flows"]], "watch": prog["watch"] + [w for u in parts for w in u["watch"]]}
+
+
 def part_chip(n, name):
     return f'<span class="partchip"><i class="pdot p{n}"></i>{t(name)}</span>'
 
@@ -250,7 +253,7 @@ def programme_view(cx, prog, findings, tag):
     svg, tpls = graph_svg(m, view, findings, ns=f"{pid}-", faded=near, part_of=part_of)
     test_note = test_readers_note(cx, set(members), tests)
     panes = "".join(f'<template id="pane-{esc(pid)}-f-{esc(fid)}">{flow_pane(cx, fid, findings)}</template>'
-                    for fid in sorted(view.on_map, key=lambda x: cx.flow[x]["name"].lower()) if fid in cx.flow)
+                    for fid in sorted(view.on_map, key=m.by_name) if fid in cx.flow)
     sections = ""
     if len(parts) > 1:
         for k, u in enumerate(parts):
@@ -277,7 +280,7 @@ def programme_view(cx, prog, findings, tag):
             cards += f'<h4 class="cardgroup">{part_chip(part_no[u["id"]], u["name"])}</h4>'
         cards += '<div class="fcards">' + "".join(
             f'<div class="fcard" id="card-{esc(pid)}-{esc(fid)}">{flow_pane(cx, fid, findings)}</div>' for fid in u["flows"]) + "</div>"
-    whole = {"flows": members, "watch": prog["watch"] + [w for u in parts for w in u["watch"]]}
+    whole = programme_whole(prog, parts)
     return (f'<section class="ucview" id="uc-{esc(pid)}" hidden>'
             f'<p><a class="back" href="#">\u2190 All programmes</a></p>'
             f'<h2>{t(prog["name"])}</h2><p class="lede2"><span class="reading">Claude\u2019s reading</span><br>{t(prog["summary"])}</p>'
@@ -323,7 +326,7 @@ def render_programme_page(m, facts, uc, dropped, st, graph_model=None):
     cards = ""
     for p in order:
         parts = [cx.use_case[x] for x in p["parts"]]
-        whole = {"flows": [fid for u in parts for fid in u["flows"]], "watch": p["watch"] + [w for u in parts for w in u["watch"]]}
+        whole = programme_whole(p, parts)
         chips = (f'<div class="partlegend">{"".join(part_chip(min(i, 6), u["name"]) for i, u in enumerate(parts, 1))}</div>'
                  if len(parts) > 1 else "")
         cards += (f'<a class="uccard{" muted-card" if p["kind"] == "tests" else ""}" href="#uc-{esc(p["id"])}">'

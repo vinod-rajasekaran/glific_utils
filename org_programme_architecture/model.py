@@ -70,6 +70,14 @@ class Model:
     def name(self, u):
         return self._names[u] if u in self._names else mask(u, self.staff)
 
+    def by_name(self, u):
+        """Sort key: the flow's name, ignoring case."""
+        return self.name(u).lower()
+
+    def name_key(self, u):
+        """Sort key that never ties: the name, then the uuid."""
+        return (self.name(u).lower(), u)
+
     def tag_label(self, u):
         return mask((((self.flows.get(u) or {}).get("tag") or {}).get("label") or "").strip())
 
@@ -153,7 +161,7 @@ class Model:
                 writers[f].add(u)
         self.data_links = []          # (writer, reader, field)
         self.shared_fields = {}
-        for v in sorted(self.scope, key=lambda u: (self.name(u).lower(), u)):
+        for v in sorted(self.scope, key=self.name_key):
             for f in sorted(self.graphs[v].fields_read()):
                 w = writers.get(f, set()) - {v}
                 if not w:
@@ -193,7 +201,7 @@ class Model:
                 linked |= {u, v}
         entry = {u for u in sc if self.active_trig.get(u) or self.keywords(u) or u in self.setting_starts}
         linked |= entry
-        by_name = lambda u: self.name(u).lower()
+        by_name = self.by_name
         degree = lambda u: len(self.callers[u]) + sum(1 for v, _ in self.sum[u]["starts"] if v in sc)
         # Entry points first (schedules, keywords, settings), so the cap never hides how things start
         order = sorted(linked, key=lambda u: (u not in entry, -degree(u), by_name(u)))

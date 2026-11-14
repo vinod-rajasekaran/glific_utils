@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 from urllib.parse import urlsplit
 
-from privacy import _host, mask
+from privacy import host_of, mask
 from text import join, names, plural
 
 
@@ -155,7 +155,7 @@ def summarise(g):
             s["calls"].append(webhook_desc(a))
             url = str(a.get("url") or "").strip()
             if "://" in url:
-                host = _host(url)
+                host = host_of(url)
                 if host != "[link]":
                     s["hosts"].append(host)
             elif url:
@@ -202,7 +202,7 @@ def mask_summary(s, staff):
     group-move conditions and the names of flows a flow starts."""
     for key in TEXT_KEYS:
         s[key] = [mask(x, staff) for x in s[key]]
-    s["moves"] = [(d, tuple(mask(g, staff) for g in gs), tuple(mask(c, staff) for c in cond) if cond else cond)
-                  for d, gs, cond in s["moves"]]
+    # group names were masked by names() as they were read, the same way as everywhere else
+    s["moves"] = [(d, gs, tuple(mask(c, staff) for c in cond) if cond else cond) for d, gs, cond in s["moves"]]
     s["starts"] = [(v, mask(name, staff)) for v, name in s["starts"]]
     return s

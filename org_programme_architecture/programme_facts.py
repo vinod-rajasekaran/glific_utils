@@ -10,7 +10,7 @@ the model, never from Claude.
 import json
 from collections import Counter
 
-from privacy import _host, clean_text, staff_names  # noqa: F401  (re-exported for callers and tests)
+from privacy import host_of, clean_text, staff_names  # noqa: F401  (re-exported for callers and tests)
 
 from schedules import schedule_text
 from text import join, names, times
@@ -95,7 +95,7 @@ def _move_text(direction, groups, cond):
 def build_facts(m):
     """Facts for every flow in the model's scope (use Settings(scope_all=True) for the whole export)."""
     staff = staff_names(m.flows)
-    order = sorted(m.scope, key=lambda u: (m.name(u).lower(), u))
+    order = sorted(m.scope, key=m.name_key)
     flows, edges, groups, triggers, hosts = [], [], {}, [], set()
 
     def group(name):
@@ -162,7 +162,7 @@ def build_facts(m):
                         rec["checked_by"].append(u)
             for a in n.get("actions") or []:
                 if a.get("type") == "call_webhook" and "://" in str(a.get("url") or ""):
-                    host = _host(str(a["url"]).strip())
+                    host = host_of(str(a["url"]).strip())
                     if host != "[link]":
                         hosts.add(host)
 
@@ -185,8 +185,8 @@ def build_facts(m):
         })
 
     for rec in groups.values():
-        rec["added_by"] = sorted(set(rec["added_by"]), key=lambda u: m.name(u).lower())
-        rec["removed_by"] = sorted(set(rec["removed_by"]), key=lambda u: m.name(u).lower())
+        rec["added_by"] = sorted(set(rec["added_by"]), key=m.by_name)
+        rec["removed_by"] = sorted(set(rec["removed_by"]), key=m.by_name)
     findings = [clean_text(x, staff, 400) for x in m.findings]
     for u in order:
         if m.sum[u]["lost"]:
