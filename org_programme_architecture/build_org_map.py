@@ -54,8 +54,7 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--from-json", metavar="DIR", type=Path, help="folder with flows.json and triggers.json; re-renders the HTML only")
     p.add_argument("--project", default=None,
-                   help="name for the page titles (default: the organisation's name from Glific, else GLIFIC_PROJECT, "
-                        "else 'Glific chatbot')")
+                   help="name for the page titles (default: the organisation's name from Glific, else 'Glific chatbot')")
     p.add_argument("--tag", default=os.environ.get("GLIFIC_TAG", ""), help="flow tag to start from, e.g. '2025 Pilot' (default: start from triggers and keywords)")
     p.add_argument("--tz", default=os.environ.get("GLIFIC_TZ", "Asia/Kolkata"), help="display timezone: 'IST, UTC+5:30' or an IANA name")
     p.add_argument("--date", type=date.fromisoformat, default=None,
@@ -98,8 +97,8 @@ def main():
 
 
 def project_name(args, org):
-    """--project if given; otherwise the organisation's name from settings.json; then GLIFIC_PROJECT."""
-    return args.project or mask(str((org or {}).get("name") or "")).strip() or os.environ.get("GLIFIC_PROJECT") or "Glific chatbot"
+    """--project if given; otherwise the organisation's name from settings.json."""
+    return args.project or mask(str((org or {}).get("name") or "")).strip() or "Glific chatbot"
 
 
 def settings_from(args, org, scope_all=False):

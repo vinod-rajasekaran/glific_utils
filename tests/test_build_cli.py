@@ -104,11 +104,11 @@ if __name__ == "__main__":
 
 
 class OrgNameTest(unittest.TestCase):
-    def run_with_settings(self, *args, **env):
+    def run_with_settings(self, *args, org_name="Healthy Families Trust", **env):
         src = Path(tempfile.mkdtemp())
         for n in ("flows.json", "triggers.json"):
             shutil.copy(FIX / n, src / n)
-        (src / "settings.json").write_text(json.dumps({"name": "Healthy Families Trust", "outOfOffice": {}}))
+        (src / "settings.json").write_text(json.dumps({"name": org_name, "outOfOffice": {}}))
         out = tempfile.mkdtemp()
         e = {k: v for k, v in os.environ.items() if not k.startswith(("GLIFIC_", "ANTHROPIC_"))}
         e.update({"GLIFIC_OUTPUT_ROOT": out, "GLIFIC_NO_DOTENV": "1"}, **env)
@@ -120,8 +120,9 @@ class OrgNameTest(unittest.TestCase):
     def test_org_name_from_settings(self):
         self.assertIn("<title>Healthy Families Trust flow map</title>", self.run_with_settings())
 
-    def test_org_name_beats_env_default(self):
-        self.assertIn("Healthy Families Trust", self.run_with_settings(GLIFIC_PROJECT="My chatbot"))
+    def test_glific_project_is_not_used(self):
+        page = self.run_with_settings(org_name="", GLIFIC_PROJECT="My chatbot")
+        self.assertIn("<title>Glific chatbot flow map</title>", page)
 
     def test_project_flag_wins(self):
         self.assertIn("<title>Pilot review flow map</title>", self.run_with_settings("--project", "Pilot review"))

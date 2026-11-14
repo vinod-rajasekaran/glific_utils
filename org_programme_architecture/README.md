@@ -51,7 +51,7 @@ output/org_programme_architecture/2026-11-13_22-31-13/
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--project` | the organisation's name from Glific (`settings.json`), else `GLIFIC_PROJECT`, else "Glific chatbot" | Name for the page titles |
+| `--project` | the organisation's name from Glific (`settings.json`), else "Glific chatbot" | Name for the page titles |
 | `--tag` | `GLIFIC_TAG`, else none | Flow tag the graph starts from. Without it, the graph starts from active triggers and keywords |
 | `--tz` | `GLIFIC_TZ`, else `Asia/Kolkata` | Display time zone: `"IST, UTC+5:30"` or an IANA name. UTC is shown in brackets |
 | `--date` | today, or the date the `--from-json` folder name starts with | Snapshot date (`YYYY-MM-DD`): decides which triggers have ended |
