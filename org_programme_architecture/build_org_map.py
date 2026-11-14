@@ -29,11 +29,13 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from glific_get_flows import fetch_flows, login, run_dir, save_json
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # the repo root, for glific_common
+
+from glific_common.privacy import mask  # noqa: E402
+from glific_get_flows import fetch_flows, login, run_dir, save_json  # noqa: E402
 from glific_get_settings import fetch_settings
 from glific_get_triggers import fetch_triggers
 from model import Model, Settings
-from privacy import mask
 from grouping import group_answer
 from render_org_map import render_org_map
 from programme_claude import MODEL, PROMPT_PATH, ProgrammeError, run_programmes, validate

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Fetch all triggers (scheduled flow starts: nudges, API data pulls, broadcasts) from Glific.
 
-Uses the same env vars as glific_get_flows.py (keep both files in the same folder):
+Uses the same settings as glific_get_flows.py (the Glific client is in glific_common/api.py):
   python3 glific_get_triggers.py   # writes output/org_programme_architecture/<YYYY-MM-DD_HH-MM-SS>/triggers.json
 
 Times (startAt, nextTriggerAt) are in UTC.
 """
 import sys
 
-from glific_get_flows import PAGE_SIZE, login, post, save_json
+from glific_get_flows import login, save_json
+from glific_common.api import GlificError, paged
 from schedules import WEEKDAYS as FULL_WEEKDAYS
 
 TRIGGERS_QUERY = """
@@ -52,17 +53,10 @@ def describe(t):
 
 
 def get_all_triggers(token):
-    triggers, offset = [], 0
-    while True:
-        variables = {"filter": {}, "opts": {"order": "ASC", "limit": PAGE_SIZE, "offset": offset}}
-        result = post("/api", {"query": TRIGGERS_QUERY, "variables": variables}, token)
-        if result.get("errors"):
-            sys.exit(f"GraphQL error: {result['errors']}")
-        page = result["data"]["triggers"]
-        triggers.extend(page)
-        if len(page) < PAGE_SIZE:
-            return triggers
-        offset += PAGE_SIZE
+    try:
+        return paged(TRIGGERS_QUERY, "triggers", token)
+    except GlificError as e:
+        sys.exit(str(e))
 
 
 def fetch_triggers(token):

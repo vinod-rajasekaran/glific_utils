@@ -5,7 +5,7 @@ import unittest
 
 from tests.org_programme_architecture.helpers import SEEDS, by_name, groups_page, hostile, load, model  # also puts org_programme_architecture on sys.path
 import flow_reading as fr  # noqa: E402
-import privacy as pv  # noqa: E402
+from glific_common import privacy as pv  # noqa: E402
 import programme_facts as uf  # noqa: E402
 
 
