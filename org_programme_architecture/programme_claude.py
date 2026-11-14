@@ -15,6 +15,8 @@ from pathlib import Path
 MODEL = "claude-opus-5-5"
 EFFORT = "high"
 MAX_TOKENS = 128000
+# Models that take server-side refusal fallbacks ("default" routing); Haiku has none
+FALLBACK_MODELS = {"claude-opus-5-5", "claude-sonnet-5-5"}
 PROMPT_PATH = Path(__file__).resolve().parent / "PROGRAMME_PROMPT.md"
 CONFIDENCE = ["clear", "likely", "guess"]
 ROLES = ["core", "helper", "shared", "test", "leftover", "unknown"]
@@ -63,7 +65,7 @@ def _client():
         raise ProgrammeError(f"no Anthropic credentials: {e}") from e
 
 
-def call_claude(facts, client=None, repair_errors=None, previous=None):
+def call_claude(facts, client=None, repair_errors=None, previous=None, model=MODEL):
     """Send the facts (and, for a repair, the previous answer and its problems); return the parsed JSON."""
     client = client or _client()
     # The facts are the big part of the request; caching them makes a repair call a cache read
@@ -77,11 +79,11 @@ def call_claude(facts, client=None, repair_errors=None, previous=None):
              + "\n- ".join(repair_errors) + "\n\nReturn the full corrected answer. Use only IDs from the facts."},
         ]
     try:
+        fallback = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"} if model in FALLBACK_MODELS else {}
         with client.beta.messages.stream(
-            model=MODEL,
+            model=model,
             max_tokens=MAX_TOKENS,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
+            **fallback,
             output_config={"effort": EFFORT, "format": {"type": "json_schema", "schema": SCHEMA}},
             system=[{"type": "text", "text": PROMPT_PATH.read_text(encoding="utf-8"), "cache_control": {"type": "ephemeral"}}],
             messages=messages,
@@ -103,7 +105,10 @@ def call_claude(facts, client=None, repair_errors=None, previous=None):
     except ValueError as e:
         raise ProgrammeError("Claude's answer was not valid JSON") from e
     if isinstance(out, dict) and isinstance(getattr(msg, "model", None), str):
-        out["_meta"] = {"model": msg.model}   # a server-side fallback can answer with another model
+        u = getattr(msg, "usage", None)   # a server-side fallback can answer with another model
+        out["_meta"] = {"model": msg.model, **{k: getattr(u, k, None) for k in
+                        ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+                        if isinstance(getattr(u, k, None), int)}}
     return out
 
 
@@ -335,32 +340,32 @@ def _serious(problems):
     return [p for p in problems if not p.startswith(COSMETIC)]
 
 
-def run_programmes(facts, client=None):
+def run_programmes(facts, client=None, model=MODEL):
     """Call Claude, validate, and repair once if the answer has problems that matter.
     Returns (raw answer, validated, notes on what was dropped).
 
     Whichever answer places more flows (then has fewer problems) is kept, and if the repair call fails the first answer
     is kept, so a paid-for usable answer is never thrown away."""
     client = client or _client()
-    raw = call_claude(facts, client)
+    raw = call_claude(facts, client, model=model)
     try:
         validated, problems = validate(raw, facts)
     except ProgrammeError as e:
         problems, validated = [str(e)], None
     try:
-        return _repair_if_needed(facts, client, raw, validated, problems)
+        return _repair_if_needed(facts, client, raw, validated, problems, model)
     except ProgrammeError as e:
         if getattr(e, "raw", None) is None:
             e.raw = raw            # so the caller can save the paid-for answer even when it is unusable
         raise
 
 
-def _repair_if_needed(facts, client, raw, validated, problems):
+def _repair_if_needed(facts, client, raw, validated, problems, model=MODEL):
     if not _serious(problems):
         return raw, validated, problems
     raw2 = None
     try:
-        raw2 = call_claude(facts, client, repair_errors=problems, previous=raw)
+        raw2 = call_claude(facts, client, repair_errors=problems, previous=raw, model=model)
         validated2, problems2 = validate(raw2, facts)
     except ProgrammeError as e:
         if validated is None:
