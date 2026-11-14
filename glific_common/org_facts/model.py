@@ -1,4 +1,5 @@
 """The model of an export: every active flow, how each starts and connects, and the main graph's view."""
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date
@@ -58,6 +59,7 @@ class Model:
         self.graphs = {u: FlowGraph(f) for u, f in self.flows.items()}
         self.sum = {u: mask_summary(summarise(g), self.staff) for u, g in self.graphs.items()}
         self.findings = []
+        self._export_failures()
         self.triggers = [self._masked_trigger(t) for t in triggers]
         self._triggers()
         self._scope()
@@ -72,6 +74,16 @@ class Model:
             if t.get(key):
                 t[key] = [mask(g, self.staff) for g in names(t[key])]
         return t
+
+    def _export_failures(self):
+        """Flows Glific could not export (fetch.py records why): they hold no steps, which is not the same as empty."""
+        self.export_failed = {u: mask(re.sub(r",?\s*UUID - [0-9a-fA-F-]{36}", "", str(f["export_error"])), self.staff)
+                              for u, f in self.flows.items() if f.get("export_error")}
+        if self.export_failed:
+            names_ = sorted(map(self.name, self.export_failed), key=str.lower)
+            reasons = list(dict.fromkeys(self.export_failed.values()))
+            self.findings.append(f"{plural(len(names_), 'flow')} could not be exported from Glific, so they show with no steps: "
+                                 f"{join(names_, 8)}. Glific said: {'; '.join(reasons[:3])}.")
 
     def name(self, u):
         return self._names[u] if u in self._names else mask(u, self.staff)

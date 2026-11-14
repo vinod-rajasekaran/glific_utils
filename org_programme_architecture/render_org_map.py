@@ -361,6 +361,10 @@ def render_org_map(m, facts, answer, dropped=()):
         rows = "".join(f'<li><b>{t(cx.flow[f]["name"])}</b>{": " + t(cx.claude_flow[f]["purpose"]) if cx.claude_flow.get(f, {}).get("purpose") else ""}</li>'
                        for f in answer["not_placed"])
         not_placed = f'<section class="sect"><h2>Not placed</h2><p>Claude could not tell which programme these flows belong to.</p><ul class="plain">{rows}</ul></section>'
+    if m.export_failed:
+        rows = "".join(f'<li><b>{t(m.name(u))}</b>: {t(why)}</li>' for u, why in sorted(m.export_failed.items(), key=lambda kv: m.name_key(kv[0])))
+        not_placed += ('<section class="sect"><h2>Not exported</h2><p>Glific could not export these flows, so they show with no '
+                       f'steps here. Open them in the Glific flow editor to fix them.</p><ul class="plain">{rows}</ul></section>')
     dropped_html = ""
     if dropped:
         dropped_html = (f'<section class="sect"><details><summary>Dropped by validation ({len(dropped)})</summary>'

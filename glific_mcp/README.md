@@ -55,7 +55,7 @@ An [MCP](https://modelcontextprotocol.io) server that lets an assistant such as 
 
 | Tool | Returns |
 |---|---|
-| `get_org_overview` | Every active flow (id, name, tag, keywords), the flows Glific settings start, the flows grouped by their links (they start each other, hand over data, or fill a group a schedule sends to), counts and warnings. `refresh=True` pulls again. Start here |
+| `get_org_overview` | Every active flow (id, name, tag, keywords), the flows Glific settings start, the flows grouped by their links (they start each other, hand over data, or fill a group a schedule sends to), counts and warnings (such as flows Glific could not export). `refresh=True` pulls again. Start here |
 | `get_flow_facts` | One flow, by name, part of its name, or id: how it starts, what it leads to (with flow names), what it touches (groups, fields, outside services, sheets), its routes and masked message excerpts; and what the saved org map says it is for |
 | `get_org_facts` | The whole account's facts, exactly as the org map sends them to Claude. Excerpts are left out by default (about 52K characters for 44 flows); `include_excerpts=True` gives all of it (about 95K characters, more than some clients accept from one tool call) |
 | `get_org_map` | The programmes from the newest saved org map built with Claude (else the newest grouped by links): the summary, programmes, their parts and flows. With `programme`, that programme's story, how each part works, what to watch and each flow's purpose. Needs a run of `./org_map.sh` first; it never calls Claude itself |

@@ -54,6 +54,13 @@ def log(*parts):
     print(*parts, file=sys.stderr)
 
 
+def _reason(e):
+    """Glific's own words for a failed export: the messages of its errors, else the error's text."""
+    errors = e.args[0] if e.args and isinstance(e.args[0], list) else None
+    messages = [x.get("message") for x in errors or [] if isinstance(x, dict) and x.get("message")]
+    return "; ".join(dict.fromkeys(messages)) if messages else str(e)
+
+
 def graph(flow, token, post=glific_post):
     """(definition, nodes, edges) of one flow; a failed export is logged and gives ({}, [], [])."""
     try:
@@ -62,6 +69,7 @@ def graph(flow, token, post=glific_post):
         if "unauthor" in str(e).lower():
             raise   # an expired token: the caller logs in again and pulls afresh
         log(f"Export failed for {flow['name']}: {e}")
+        flow["export_error"] = _reason(e)   # shown in the findings, so a reader knows the flow is not really empty
         return {}, [], []
     nodes = definition.get("nodes", [])
     if redacted:
