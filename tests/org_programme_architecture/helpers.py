@@ -1,4 +1,4 @@
-"""Shared test helpers: the made-up org in tests/fixtures, a model or facts built from it, saved
+"""Shared test helpers: the made-up org in fixtures/, a model or facts built from it, saved
 Claude answers, and a stand-in for the Anthropic client. Nothing here touches a real org."""
 import json
 import sys
@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "org_programme_architecture"))
 
 import model as md  # noqa: E402
@@ -14,7 +14,8 @@ import programme_claude as uc  # noqa: E402
 import programme_facts as uf  # noqa: E402
 import render_org_map as ru  # noqa: E402
 
-FIX = ROOT / "tests" / "fixtures"
+HERE = Path(__file__).resolve().parent
+FIX = HERE / "fixtures"
 TODAY = date(2026, 11, 13)
 U = lambda n: f"00000000-0000-4000-8000-{n:012d}"  # noqa: E731   the fixture's flow uuids, 1 to 8
 # Old draft (id "008") as the default flow and Welcome (id "001") as the new-contact flow

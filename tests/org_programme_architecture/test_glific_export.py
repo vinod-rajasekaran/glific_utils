@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.helpers import ROOT, SETTINGS  # also puts org_programme_architecture on sys.path
+from tests.org_programme_architecture.helpers import ROOT, SETTINGS  # also puts org_programme_architecture on sys.path
 import glific_get_flows as gf  # noqa: E402
 import glific_get_settings as gs  # noqa: E402
 import privacy as pv  # noqa: E402

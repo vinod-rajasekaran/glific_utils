@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.helpers import ROOT, FIX, SETTINGS  # also puts org_programme_architecture on sys.path
+from tests.org_programme_architecture.helpers import ROOT, FIX, SETTINGS  # also puts org_programme_architecture on sys.path
 import privacy as pv  # noqa: E402
 
 

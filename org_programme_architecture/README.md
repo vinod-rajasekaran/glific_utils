@@ -70,7 +70,15 @@ journey Intervention areas, fed by CommCare: f:Home visit | f:Collect phone and 
 Campaign messages are built by hand in Google Sheets.
 ```
 
-Keep all the scripts in this folder: they import from each other. Tests: `python3 -m unittest discover -s tests` from the repo root. There is one test file per module, with shared helpers in `tests/helpers.py`; they use a made-up org in `tests/fixtures`, and `GLIFIC_OUTPUT_ROOT` and `GLIFIC_NO_DOTENV` keep them away from your `output/` and `.env`. `tests/test_snapshots.py` checks the pages byte for byte; after an intended change to the page, regenerate them with `UPDATE_SNAPSHOTS=1`.
+Keep all the scripts in this folder: they import from each other.
+
+### Tests
+
+From the repo root: `python3 -m unittest discover -s tests -t .` (all features) or `python3 -m unittest discover -s tests/org_programme_architecture -t .` (this one). The tests live in [`tests/org_programme_architecture/`](../tests/org_programme_architecture/), grouped by module (for example `test_privacy.py`, `test_grouping.py`, `test_render_org_map.py`), with shared helpers in `helpers.py`. They use a made-up org in `fixtures/` (rebuilt by `fixtures/make_fixture.py`) and a stand-in for the Anthropic client, so they make no network calls; `GLIFIC_OUTPUT_ROOT` and `GLIFIC_NO_DOTENV` keep them away from your `output/` and `.env`. `test_snapshots.py` checks the pages byte for byte against `snapshots/`; after an intended change to the page, regenerate them with `UPDATE_SNAPSHOTS=1 python3 -m unittest tests.org_programme_architecture.test_snapshots` and review the diff before committing.
+
+### Design history
+
+The design and the build plan are in [`docs/superpowers/`](../docs/superpowers/) (`2026-11-13-org-programme-map*`). They record why it was built this way; this README is the reference for how it works now.
 
 ---
 

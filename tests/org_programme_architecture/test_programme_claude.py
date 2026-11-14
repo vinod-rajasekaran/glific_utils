@@ -5,7 +5,7 @@ import unittest
 from datetime import date
 from types import SimpleNamespace
 
-from tests.helpers import FIX, U, model, facts, raw, programmes_raw, validated, FakeClient  # also puts org_programme_architecture on sys.path
+from tests.org_programme_architecture.helpers import FIX, U, model, facts, raw, programmes_raw, validated, FakeClient  # also puts org_programme_architecture on sys.path
 import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
 import programme_facts as uf  # noqa: E402

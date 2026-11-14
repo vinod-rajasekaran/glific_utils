@@ -3,7 +3,7 @@ import json
 import unicodedata
 import unittest
 
-from tests.helpers import SEEDS, by_name, groups_page, hostile, load, model  # also puts org_programme_architecture on sys.path
+from tests.org_programme_architecture.helpers import SEEDS, by_name, groups_page, hostile, load, model  # also puts org_programme_architecture on sys.path
 import flow_reading as fr  # noqa: E402
 import privacy as pv  # noqa: E402
 import programme_facts as uf  # noqa: E402
