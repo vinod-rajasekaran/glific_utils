@@ -1,8 +1,8 @@
 """Flow, trigger and keyword cards, and the one-line summary on each graph box."""
 from collections import Counter, defaultdict
 
-from schedules import earlier_runs, schedule_text, schedule_title, window_text
-from text import cap_words, esc, join, names, plural, sentence, times, typo
+from glific_common.org_facts.schedules import earlier_runs, schedule_text, schedule_title, window_text
+from glific_common.org_facts.text import cap_words, esc, join, names, plural, sentence, times, typo
 
 
 def row(label, text, cls=""):

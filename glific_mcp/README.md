@@ -1,6 +1,6 @@
 # Glific MCP server
 
-An [MCP](https://modelcontextprotocol.io) server that lets an assistant such as Claude read a Glific account: its flows (with full definitions), collections, message templates, tags, languages and organisation settings. It can also create flows and collections and start flows, but only when you switch that on.
+An [MCP](https://modelcontextprotocol.io) server that lets an assistant such as Claude read a Glific account: its flows (with full definitions), collections, message templates, tags, languages and organisation settings, and the same cleaned facts about the whole account that the [org map](../org_programme_architecture/) is built from, so you can ask what the bot does. It can also create flows and collections and start flows, but only when you switch that on.
 
 > **Moved here from [`vinod-rajasekaran/glific-mcp`](https://github.com/vinod-rajasekaran/glific-mcp).** That repo held a Node.js version. This is a Python rewrite based on it, with the same tools, built on the repo's shared Glific client ([`glific_common/`](../glific_common/)). The old repo is no longer maintained.
 
@@ -18,7 +18,7 @@ An [MCP](https://modelcontextprotocol.io) server that lets an assistant such as 
    ./glific_mcp.sh --check
    ```
 
-   This logs in, calls every read tool once and prints counts (flows, collections, templates, tags, languages) and the organisation's name. It changes nothing.
+   This logs in, calls every read tool once and prints counts (flows, collections, templates, tags, languages), the organisation's name, how long the account took to pull and the size of each org tool's answer. It changes nothing.
 3. Connect it to a client:
 
    **Claude Code**
@@ -51,6 +51,17 @@ An [MCP](https://modelcontextprotocol.io) server that lets an assistant such as 
 | `get_organization_info` | The organisation's name and status, and the flows its settings start (default, new contact, opt-in, out-of-office, regex) |
 | `list_languages` | Languages configured in the account |
 
+**Org tools** (always on, read-only): what the bot does, from the cleaned facts the [org map](../org_programme_architecture/) is built from. The first call pulls the whole account (every active flow's definition, triggers and settings), which took about 50 seconds for a 44-flow account; later calls use that pull until the server restarts or you pass `refresh`.
+
+| Tool | Returns |
+|---|---|
+| `get_org_overview` | Every active flow (id, name, tag, keywords), the flows Glific settings start, the flows grouped by their links (they start each other, hand over data, or fill a group a schedule sends to), counts and warnings. `refresh=True` pulls again. Start here |
+| `get_flow_facts` | One flow, by name, part of its name, or id: how it starts, what it leads to (with flow names), what it touches (groups, fields, outside services, sheets), its routes and masked message excerpts; and what the saved org map says it is for |
+| `get_org_facts` | The whole account's facts, exactly as the org map sends them to Claude. Excerpts are left out by default (about 52K characters for 44 flows); `include_excerpts=True` gives all of it (about 95K characters, more than some clients accept from one tool call) |
+| `get_org_map` | The programmes from the newest saved org map built with Claude (else the newest grouped by links): the summary, programmes, their parts and flows. With `programme`, that programme's story, how each part works, what to watch and each flow's purpose. Needs a run of `./org_map.sh` first; it never calls Claude itself |
+
+The org tools never call Claude or any other model: the assistant you are talking to does the reading. Building the org map page, with its checked and evidenced answer, stays a separate step (`./org_map.sh`) that you run.
+
 **Write tools** (off unless `GLIFIC_MCP_ALLOW_WRITES=1` is set in `.env` or the client's environment):
 
 | Tool | What it does |
@@ -68,8 +79,9 @@ Everything a tool returns goes to the assistant's model provider, so the server 
 
 - **No contact data.** No tool reads or returns contacts, phone numbers or message history. The Node version had already removed those tools; its README still listed them.
 - **Credentials blanked.** Flow definitions pass through `glific_common/redact.py` (webhook headers, keys in URLs and bodies, JWTs and Bearer tokens become `[redacted]`), as in the org map's export.
-- **Free text masked.** Message texts, quick replies, sticky notes and template bodies pass through `glific_common/privacy.py`: phone numbers become `[number]`, emails `[email]`, links their host, and secrets `[redacted]`. IDs and structure are left intact so the assistant can follow them. Staff names are not recognised here (the org map finds them from staff alerts and tickets; this server does not read whole accounts).
-- Names of flows, collections, tags and templates are returned as they are in Glific.
+- **Free text masked.** Message texts, quick replies, sticky notes and template bodies pass through `glific_common/privacy.py`: phone numbers become `[number]`, emails `[email]`, links their host, and secrets `[redacted]`. IDs and structure are left intact so the assistant can follow them. Staff names are not recognised by these tools, which read one flow or list at a time; the org tools below do mask them.
+- **The org tools are cleaned like the org map's facts** (`glific_common/org_facts/`): staff names (found from staff alerts and tickets across the account), phone numbers, emails and links are masked in flow names, excerpts, routes and groups, and they return only what the org map sends to Claude. `get_org_map` returns only `org_map.json`, which holds Claude's checked answer and the masked flow names, never the raw export.
+- Other tools return names of flows, collections, tags and templates as they are in Glific.
 
 ## Differences from the Node version
 
@@ -82,4 +94,4 @@ Everything a tool returns goes to the assistant's model provider, so the server 
 
 ## Tests
 
-`python3 -m unittest discover -s tests/glific_mcp -t .` from the repo root (with `.venv/bin/python3`, which has the `mcp` package). The tests call the server through an in-process MCP client against a fake Glific: read-only by default, write tools only when switched on, masking and redaction of flow definitions and templates, Glific errors, an expired token, and missing settings.
+`python3 -m unittest discover -s tests/glific_mcp -t .` from the repo root (with `.venv/bin/python3`, which has the `mcp` package). The tests call the server through an in-process MCP client against a fake Glific: read-only by default, write tools only when switched on, masking and redaction of flow definitions and templates, Glific errors, an expired token, and missing settings. The org tools are tested on the org map's made-up account with phone numbers, emails, a staff name and secrets planted in it, none of which may come out; the account is pulled once; and the saved org map is read.

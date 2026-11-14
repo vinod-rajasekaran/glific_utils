@@ -5,10 +5,10 @@ import unittest
 from datetime import date
 from types import SimpleNamespace
 
-from tests.org_programme_architecture.helpers import FIX, U, model, facts, raw, programmes_raw, validated, FakeClient  # also puts org_programme_architecture on sys.path
-import model as md  # noqa: E402
+from tests.org_programme_architecture.helpers import FIX, U, model, facts, raw, programmes_raw, validated, FakeClient, stream_client  # also puts org_programme_architecture on sys.path
+from glific_common.org_facts import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
-import programme_facts as uf  # noqa: E402
+from glific_common.org_facts import facts as uf  # noqa: E402
 import render_org_map as ru  # noqa: E402
 
 
@@ -77,6 +77,24 @@ class CallTest(unittest.TestCase):
         self.assertEqual(kw["output_config"]["effort"], "high")
         self.assertEqual(kw["system"][0]["cache_control"], {"type": "ephemeral"})
         self.assertEqual(len(client.calls), 1)
+
+    def test_other_models_and_fallbacks(self):
+        client = FakeClient(raw(), self.good())
+        uc.run_programmes(facts(), client=client, model="claude-haiku-5-5")
+        self.assertEqual([c["model"] for c in client.calls], ["claude-haiku-5-5"] * 2)   # the repair uses it too
+        self.assertNotIn("fallbacks", client.calls[0])   # Haiku has no server-side fallback
+        client = FakeClient(self.good())
+        uc.run_programmes(facts(), client=client, model="claude-sonnet-5-5")
+        self.assertEqual(client.calls[0]["fallbacks"], "default")
+
+    def test_usage_is_recorded(self):
+        msg = SimpleNamespace(stop_reason="end_turn", stop_details=None, model="claude-opus-5-5",
+                              usage=SimpleNamespace(input_tokens=10, output_tokens=20, cache_read_input_tokens=0,
+                                                    cache_creation_input_tokens=5),
+                              content=[SimpleNamespace(type="text", text=json.dumps(self.good()))])
+        out = uc.call_claude(facts(), client=stream_client(msg))
+        self.assertEqual(out["_meta"], {"model": "claude-opus-5-5", "input_tokens": 10, "output_tokens": 20,
+                                        "cache_read_input_tokens": 0, "cache_creation_input_tokens": 5})
 
     def test_repair_called_once(self):
         client = FakeClient(raw(), self.good())

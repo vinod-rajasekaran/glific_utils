@@ -3,7 +3,7 @@ import unittest
 from datetime import date
 
 from tests.org_programme_architecture.helpers import ROOT, load, model  # also puts org_programme_architecture on sys.path
-import model as md  # noqa: E402
+from glific_common.org_facts import model as md  # noqa: E402
 import sections as sec  # noqa: E402
 
 

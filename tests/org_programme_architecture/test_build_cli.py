@@ -34,7 +34,7 @@ class BuildCliTest(unittest.TestCase):
         folder = Path(pages[0]).parent
         self.assertEqual(folder.parent.resolve(), out.resolve())
         names = sorted(x.name for x in folder.iterdir())
-        self.assertEqual(names, ["claude_input.json", "claude_output.json", "flows.json", "org_map.html", "triggers.json"])
+        self.assertEqual(names, ["claude_input.json", "claude_output.json", "flows.json", "org_map.html", "org_map.json", "triggers.json"])
         page = Path(pages[0]).read_text()
         self.assertIn('id="uc-weekly-tips"', page)
         self.assertIn('id="uc--graph"', page)
@@ -120,3 +120,55 @@ class OrgNameTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OrgMapJsonTest(unittest.TestCase):
+    """Every run also saves org_map.json, which the MCP server reads."""
+    def saved(self, *args):
+        p, _ = run(*args)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads((Path(p.stdout.split()[0]).parent / "org_map.json").read_text())
+
+    def test_without_claude(self):
+        d = self.saved("--no-claude")
+        self.assertEqual(d["source"], "structure")
+        self.assertIn("--no-claude", d["reason"])
+        self.assertTrue(d["answer"]["use_cases"])
+        self.assertEqual(d["flow_names"]["00000000-0000-4000-8000-000000000004"], "Ask AI")
+
+    def test_with_claude(self):
+        d = self.saved("--reuse-claude", str(FIX))
+        self.assertEqual(d["source"], "claude")
+        self.assertTrue(d["answer"]["org_summary"]["text"])
+        self.assertTrue(d["dropped"], "the fixture answer has faults that validation drops")
+
+    def test_names_are_masked(self):
+        flows = json.loads((FIX / "flows.json").read_text())
+        flows[0]["name"] = "Call 9876543210"
+        src = Path(tempfile.mkdtemp())
+        (src / "flows.json").write_text(json.dumps(flows))
+        shutil.copy(FIX / "triggers.json", src / "triggers.json")
+        e = {k: v for k, v in os.environ.items() if not k.startswith(("GLIFIC_", "ANTHROPIC_"))}
+        e.update(GLIFIC_OUTPUT_ROOT=tempfile.mkdtemp(), GLIFIC_NO_DOTENV="1")
+        p = subprocess.run([sys.executable, str(BUILD), "--from-json", str(src), "--no-claude"],
+                           capture_output=True, text=True, env=e, cwd=ROOT)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertNotIn("9876543210", (Path(p.stdout.split()[0]).parent / "org_map.json").read_text())
+
+
+class ModelOptionTest(unittest.TestCase):
+    def test_model_is_recorded_in_claude_input(self):
+        p, _ = run("--reuse-claude", str(FIX), "--model", "claude-sonnet-5-5")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        sent = json.loads((Path(p.stdout.split()[0]).parent / "claude_input.json").read_text())
+        self.assertEqual(sent["model"], "claude-sonnet-5-5")
+
+    def test_default_is_opus(self):
+        p, _ = run("--reuse-claude", str(FIX))
+        sent = json.loads((Path(p.stdout.split()[0]).parent / "claude_input.json").read_text())
+        self.assertEqual(sent["model"], "claude-opus-5-5")
+
+    def test_unknown_model_is_refused(self):
+        p, _ = run("--model", "gpt-4", "--no-claude")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("invalid choice", p.stderr)

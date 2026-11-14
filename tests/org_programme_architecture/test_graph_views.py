@@ -7,7 +7,7 @@ from datetime import date
 
 from tests.org_programme_architecture.helpers import ROOT, U, SETTINGS, load, model, uid, by_name, groups_page  # also puts org_programme_architecture on sys.path
 import graph_svg as gsvg  # noqa: E402
-import model as md  # noqa: E402
+from glific_common.org_facts import model as md  # noqa: E402
 
 
 class GraphSubsetTest(unittest.TestCase):
@@ -99,7 +99,7 @@ class SettingFlows(unittest.TestCase):
 
 class CapKeepsEntryFlows(unittest.TestCase):
     def test_entry_flows_survive_the_cap(self):
-        import model as model_module
+        from glific_common.org_facts import model as model_module
         saved = model_module.GRAPH_CAP
         model_module.GRAPH_CAP = 4
         try:
@@ -171,5 +171,5 @@ class ViewConsistency(unittest.TestCase):
 
     def test_build_view_needs_the_cap(self):
         import inspect
-        import graph_view
+        from glific_common.org_facts import graph_view
         self.assertIs(inspect.signature(graph_view.build_view).parameters["cap"].default, inspect.Parameter.empty)

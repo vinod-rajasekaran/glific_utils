@@ -12,8 +12,8 @@ from collections import Counter
 
 from glific_common.privacy import clean_text, host_of, mask
 
-from schedules import schedule_text
-from text import join, names, times
+from .schedules import schedule_text
+from .text import join, names, times
 
 MAX_EXCERPTS = 25                                   # per flow: sticky notes first, then messages in order
 

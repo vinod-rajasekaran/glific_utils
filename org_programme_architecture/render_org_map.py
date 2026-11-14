@@ -17,7 +17,7 @@ from cards import flow_card
 from graph_svg import graph_svg
 from page_check import check_html
 from sections import context_section, shared_resources, strip_section
-from text import esc, fmt_day, join, plural, typo
+from glific_common.org_facts.text import esc, fmt_day, join, plural, typo
 from programme_claude import MODEL, wrap_use_case
 
 ROLE_LABEL = {"core": "Core", "helper": "Helper", "shared": "Shared", "test": "Test", "leftover": "Leftover", "unknown": "Role unclear"}

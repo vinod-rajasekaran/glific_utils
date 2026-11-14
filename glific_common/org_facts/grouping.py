@@ -12,7 +12,7 @@ to nothing joins the group whose main tag it carries; the rest are listed as not
 import re
 from collections import Counter, defaultdict
 
-from text import plural
+from .text import plural
 
 NOT_CONNECTED = "Not connected"
 
