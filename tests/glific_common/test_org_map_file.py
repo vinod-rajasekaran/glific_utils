@@ -27,6 +27,22 @@ class LatestTest(unittest.TestCase):
         (root / "2026-11-02_10-00-00" / omf.FILENAME).unlink()
         self.assertEqual(omf.latest(root)[1]["run"], "2026-11-03_10-00-00")
 
+    def test_damaged_files_are_skipped(self):
+        root = Path(tempfile.mkdtemp())
+        for name, text in (("2026-11-01_10-00-00", json.dumps({"run": "good", "source": "claude"})),
+                           ("2026-11-02_10-00-00", '{"half-writ'), ("2026-11-03_10-00-00", "[1, 2]")):
+            (root / name).mkdir()
+            (root / name / omf.FILENAME).write_text(text)
+        self.assertEqual(omf.latest(root)[1]["run"], "good")
+
+    def test_maps_of_another_account_are_skipped(self):
+        root = Path(tempfile.mkdtemp())
+        for name, host in (("2026-11-01_10-00-00", "api.ours.glific.com"), ("2026-11-02_10-00-00", "api.other.glific.com")):
+            (root / name).mkdir()
+            (root / name / omf.FILENAME).write_text(json.dumps({"run": name, "source": "claude", "glific_host": host}))
+        self.assertEqual(omf.latest(root, host="api.ours.glific.com")[1]["run"], "2026-11-01_10-00-00")
+        self.assertEqual(omf.latest(root, host="api.new.glific.com"), (None, None))
+
     def test_none_yet(self):
         self.assertEqual(omf.latest(Path(tempfile.mkdtemp()) / "missing"), (None, None))
 

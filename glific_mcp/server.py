@@ -26,6 +26,7 @@ Usage:
 import copy
 import os
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -64,6 +65,7 @@ INSTRUCTIONS = (
 server = MCPServer(name="glific", title="Glific", instructions=INSTRUCTIONS, version="2.1.0")
 _session = None
 _org = None   # the account's model and facts, pulled on the first org tool call
+_org_lock = threading.Lock()   # one pull at a time, even when the first calls arrive together
 
 
 def session(post=None):
@@ -222,16 +224,17 @@ def list_languages() -> list[dict[str, Any]]:
 def org(refresh=False):
     """{"model", "facts", "pulled"} for the whole account, pulled once and kept for this process."""
     global _org
-    if _org is None or refresh:
-        s = session()
-        try:
-            flows, triggers, settings = s.call(lambda token: fetch.fetch_all(token, post=s.post))
-        except api.GlificError as e:
-            raise ToolError(f"Could not read the account: {e}") from e
-        name = mask(str(settings.get("name") or "")).strip() or "Glific chatbot"
-        m = Model(flows, triggers, Settings(project=name, tz=os.environ.get("GLIFIC_TZ") or "Asia/Kolkata"), org=settings)
-        _org = {"model": m, "facts": build_facts(m), "pulled": datetime.now().isoformat(timespec="seconds")}
-    return _org
+    with _org_lock:
+        if _org is None or refresh:
+            s = session()
+            try:
+                flows, triggers, settings = s.call(lambda token: fetch.fetch_all(token, post=s.post))
+            except Exception as e:   # noqa: BLE001 - Glific, HTTP and network errors all end the call the same way
+                raise ToolError(f"Could not read the account: {type(e).__name__}: {e}") from e
+            name = mask(str(settings.get("name") or "")).strip() or "Glific chatbot"
+            m = Model(flows, triggers, Settings(project=name, tz=os.environ.get("GLIFIC_TZ") or "Asia/Kolkata"), org=settings)
+            _org = {"model": m, "facts": build_facts(m), "pulled": datetime.now().isoformat(timespec="seconds")}
+        return _org
 
 
 def org_map_root():
@@ -244,11 +247,13 @@ def _named(m, entries):
     return [{**e, "flow": m.name(e["ref"])} if e.get("ref") in m.flows else e for e in entries]
 
 
-def _find_flow(facts, flow):
-    """The fact for a flow given its id (uuid) or its name: exact, else the one name containing it."""
+def _find_flow(m, facts, flow):
+    """The fact for a flow given its uuid, its Glific id (as list_flows gives) or its name: exact, else the
+    one name containing it."""
     by_id = {f["id"]: f for f in facts["flows"]}
-    if flow in by_id:
-        return by_id[flow]
+    by_id.update({str(m.flows[u].get("id")): by_id[u] for u in by_id if u in m.flows and m.flows[u].get("id")})
+    if flow.strip() in by_id:
+        return by_id[flow.strip()]
     q = flow.strip().casefold()
     exact = [f for f in facts["flows"] if f["name"].casefold() == q]
     found = exact or [f for f in facts["flows"] if q and q in f["name"].casefold()]
@@ -268,7 +273,7 @@ def get_org_overview(refresh: bool = False) -> dict[str, Any]:
     call (refresh=True pulls it again). Start here, then use get_flow_facts."""
     o = org(refresh)
     m, f = o["model"], o["facts"]
-    path, saved = org_map_file.latest(org_map_root())
+    path, saved = org_map_file.latest(org_map_root(), host=org_map_file.glific_host())
     return {
         "organisation": m.st.project,
         "pulled_at": o["pulled"],
@@ -292,10 +297,10 @@ def get_flow_facts(flow: str) -> dict[str, Any]:
     org map says it is for, when there is one."""
     o = org()
     m = o["model"]
-    fact = copy.deepcopy(_find_flow(o["facts"], flow))
+    fact = copy.deepcopy(_find_flow(m, o["facts"], flow))
     fact["starts_from"] = _named(m, fact.get("starts_from") or [])
     fact["leads_to"] = _named(m, fact.get("leads_to") or [])
-    _, saved = org_map_file.latest(org_map_root())
+    _, saved = org_map_file.latest(org_map_root(), host=org_map_file.glific_host())
     if saved:
         answer = saved.get("answer") or {}
         reading = next((x for x in answer.get("flows") or [] if x.get("id") == fact["id"]), None)
@@ -330,7 +335,7 @@ def get_org_map(programme: str = "") -> dict[str, Any]:
     """The programmes from the latest saved org map built by ./org_map.sh (the newest built with Claude, else the newest grouped by links):
     the organisation summary and each programme with its parts and flows. Give programme (its name or id) for
     its story, how each part works, what to watch, and each flow's purpose."""
-    path, saved = org_map_file.latest(org_map_root())
+    path, saved = org_map_file.latest(org_map_root(), host=org_map_file.glific_host())
     if not saved:
         raise ToolError("No org map has been saved yet. Run ./org_map.sh (or ./org_map.sh --no-claude) in glific_utils first.")
     a, names = saved.get("answer") or {}, saved.get("flow_names") or {}

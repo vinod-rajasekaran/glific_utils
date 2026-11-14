@@ -63,5 +63,17 @@ class FetchTest(unittest.TestCase):
             self.pull(fake(flows_error="unauthorized"))
 
 
+class ExpiredTokenTest(unittest.TestCase):
+    def test_an_expired_token_during_exports_is_raised_not_swallowed(self):
+        inner = fake()
+
+        def post(path, payload, token=None):
+            if "exportFlow(" in payload["query"]:
+                return {"data": {"exportFlow": {"errors": [{"message": "Unauthorized"}]}}}
+            return inner(path, payload, token)
+        with self.assertRaises(GlificError), contextlib.redirect_stderr(io.StringIO()):
+            fetch.fetch_flows("tok", post=post)
+
+
 if __name__ == "__main__":
     unittest.main()

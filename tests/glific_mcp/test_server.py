@@ -223,6 +223,38 @@ class OrgToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(got["excerpts"])
         self.assertEqual((await self.data("get_flow_facts", {"flow": got["id"]}))["name"], "Ask AI")
 
+    async def test_flow_facts_by_glific_numeric_id(self):
+        flows, _ = load_fixture()
+        ask = next(f for f in flows if f["name"] == "Ask AI")
+        self.assertEqual((await self.data("get_flow_facts", {"flow": str(ask["id"])}))["name"], "Ask AI")
+
+    async def test_network_errors_are_tool_errors(self):
+        import urllib.error
+
+        def down(path, payload, token=None):
+            if path == "/api/v1/session":
+                return {"data": {"access_token": "t"}}
+            raise urllib.error.URLError("connection refused")
+        self.mod.session(post=down)
+        r = await self.call("get_org_overview")
+        self.assertTrue(r.is_error)
+        self.assertIn("Could not read the account", r.content[0].text)
+
+    async def test_token_expiring_mid_pull_logs_in_again(self):
+        flows, triggers = load_fixture()
+        inner = fixture_glific(flows, triggers)
+        tokens = iter(["old", "new"])
+
+        def post(path, payload, token=None):
+            if path == "/api/v1/session":
+                return {"data": {"access_token": next(tokens)}}
+            if "exportFlow(" in payload["query"] and token == "old":
+                return {"data": {"exportFlow": {"errors": [{"message": "Unauthorized"}]}}}
+            return inner(path, payload, token)
+        self.mod.session(post=post)
+        got = await self.data("get_flow_facts", {"flow": "Ask AI"})
+        self.assertTrue(got["excerpts"], "the flow's definition was pulled after logging in again")
+
     async def test_unknown_or_ambiguous_flow_is_an_error(self):
         r = await self.call("get_flow_facts", {"flow": "nothing like it"})
         self.assertTrue(r.is_error)
@@ -270,6 +302,9 @@ class OrgToolsTest(unittest.IsolatedAsyncioTestCase):
         run = Path(self.out) / "2026-11-14_10-00-00"
         run.mkdir()
         (run / "org_map.json").write_text(json.dumps(org_map_file.record(m, answer, dropped)))
+        other = Path(self.out) / "2026-11-15_10-00-00"   # a newer map of another account is ignored
+        other.mkdir()
+        (other / "org_map.json").write_text(json.dumps({**org_map_file.record(m, answer, dropped), "glific_host": "api.other.org"}))
         got = await self.data("get_org_map")
         self.assertEqual(got["source"], "Claude")
         self.assertEqual(got["run"], "2026-11-14_10-00-00")

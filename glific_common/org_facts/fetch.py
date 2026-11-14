@@ -59,6 +59,8 @@ def graph(flow, token, post=glific_post):
     try:
         definition, redacted = export_definition(flow["id"], flow["uuid"], token, post=post)
     except GlificError as e:
+        if "unauthor" in str(e).lower():
+            raise   # an expired token: the caller logs in again and pulls afresh
         log(f"Export failed for {flow['name']}: {e}")
         return {}, [], []
     nodes = definition.get("nodes", [])

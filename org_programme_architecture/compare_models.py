@@ -4,7 +4,8 @@
 Each model gets the identical request (claude_input.json from the run), with the same repair
 round the org map uses. Each answer is scored with the org map's own checks and drawn as a page
 from the run's saved export, so the pages can be read side by side. Nothing is sent that the run
-did not already send to Anthropic. It costs money: see the estimate it prints before starting.
+did not already send to Anthropic. It costs money: roughly $1 per Opus run, $0.40 per Sonnet run and $0.05 per
+Haiku run on a 44-flow account (see docs/evals/).
 
 Usage:
   .venv/bin/python3 org_programme_architecture/compare_models.py RUN_DIR [--models a,b,c] [--runs 2]
@@ -72,6 +73,8 @@ class _Wrapped:
 
 
 def cost(model, usage):
+    if model not in PRICES:
+        return None   # unknown price: the run is still kept
     p_in, p_out, p_read, p_write = PRICES[model]
     return (usage["input_tokens"] * p_in + usage["output_tokens"] * p_out + usage["cache_read_input_tokens"] * p_read
             + usage["cache_creation_input_tokens"] * p_write) / 1e6
@@ -93,7 +96,7 @@ def metrics(model, facts, msgs, raw, validated, notes, seconds):
     placed = len({f for u in validated["use_cases"] for f in u["flows"]})
     return {
         "model": model, "answered_by": [m.model for m in msgs], "calls": len(msgs), "seconds": round(seconds),
-        "usage": usage, "cost_usd": round(cost(model, usage), 3),
+        "usage": usage, "cost_usd": None if cost(model, usage) is None else round(cost(model, usage), 3),
         "first_answer_problems": first_problems, "dropped_after_repair": len(notes),
         "programmes": len(validated["programmes"]), "parts": len(validated["use_cases"]),
         "flows_placed": f"{placed}/{total}", "flows_with_purpose": sum(1 for f in validated["flows"] if f.get("purpose")),
@@ -110,19 +113,20 @@ def one(model, n, facts, run, out):
     start = time.monotonic()
     try:
         raw, validated, notes = run_programmes(facts, client=rec, model=model)
-    except ProgrammeError as e:
-        m = {"model": model, "failed": str(e), "calls": len(rec.messages), "seconds": round(time.monotonic() - start)}
+    except Exception as e:   # noqa: BLE001 - one model failing must not lose the others' paid-for answers
+        m = {"model": model, "failed": f"{type(e).__name__}: {e}", "calls": len(rec.messages),
+             "seconds": round(time.monotonic() - start)}
         save_json(m, "metrics.json", folder)
         return m
+    save_json(raw, "claude_output.json", folder)   # saved first: the answer is paid for
     m = metrics(model, facts, rec.messages, raw, validated, notes, time.monotonic() - start)
-    save_json(raw, "claude_output.json", folder)
     save_json(m, "metrics.json", folder)
     env = {**os.environ, "GLIFIC_OUTPUT_ROOT": str(folder / "page")}
     p = subprocess.run([sys.executable, str(HERE / "build_org_map.py"), "--from-json", str(run), "--reuse-claude", str(folder)],
                        capture_output=True, text=True, env=env)
     m["page"] = p.stdout.strip() or f"page failed: {p.stderr[-300:]}"
     save_json(m, "metrics.json", folder)
-    print(f"{folder.name}: done in {m['seconds']}s, ${m['cost_usd']}", file=sys.stderr)
+    print(f"{folder.name}: done in {m['seconds']}s, cost {m['cost_usd']}", file=sys.stderr)
     return m
 
 
