@@ -12,8 +12,11 @@ from collections import Counter
 from datetime import datetime
 from string import Template
 
-from render_graph import (PAGE, _Balance, esc, flow_card, fmt_day, graph_svg, join, plural,
-                          context_section, shared_resources, strip_section, tagging_gaps, typo)
+from cards import flow_card
+from graph_svg import graph_svg
+from render_graph import PAGE, _Balance
+from sections import context_section, shared_resources, strip_section, tagging_gaps
+from text import esc, fmt_day, join, plural, typo
 from programme_claude import MODEL
 
 BASE_CSS = re.search(r"<style>(.*?)</style>", PAGE, re.S).group(1)

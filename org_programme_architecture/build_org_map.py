@@ -26,7 +26,8 @@ from pathlib import Path
 from glific_get_flows import fetch_flows, login, run_dir, save_json
 from glific_get_settings import fetch_settings
 from glific_get_triggers import fetch_triggers
-from render_graph import Model, Settings, render_html
+from model import Model, Settings
+from render_graph import render_html
 from render_programmes import render_programme_page
 from programme_claude import MODEL, PROMPT_PATH, ProgrammeError, run_programmes, validate
 from programme_facts import build_facts

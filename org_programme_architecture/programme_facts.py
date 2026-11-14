@@ -12,7 +12,8 @@ from collections import Counter
 
 from privacy import _host, clean_text, staff_names  # noqa: F401  (re-exported for callers and tests)
 
-from render_graph import join, names, schedule_text, times
+from schedules import schedule_text
+from text import join, names, times
 
 MAX_EXCERPTS = 25                                   # per flow: sticky notes first, then messages in order
 

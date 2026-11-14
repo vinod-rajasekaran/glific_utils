@@ -9,7 +9,7 @@ Times (startAt, nextTriggerAt) are in UTC.
 import sys
 
 from glific_get_flows import PAGE_SIZE, login, post, save_json
-from render_graph import WEEKDAYS as FULL_WEEKDAYS
+from schedules import WEEKDAYS as FULL_WEEKDAYS
 
 TRIGGERS_QUERY = """
 query triggers($filter: TriggerFilter, $opts: Opts) {

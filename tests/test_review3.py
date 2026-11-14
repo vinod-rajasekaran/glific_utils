@@ -159,12 +159,14 @@ class C2C3SettingFlows(unittest.TestCase):
 
 class C4CapKeepsEntryFlows(unittest.TestCase):
     def test_entry_flows_survive_the_cap(self):
-        saved = ra.GRAPH_CAP
-        ra.GRAPH_CAP = 4
+        import model as model_module
+        saved = model_module.GRAPH_CAP
+        model_module.GRAPH_CAP = 4
         try:
             m = model(scope_all=True)
         finally:
-            ra.GRAPH_CAP = saved
+            model_module.GRAPH_CAP = saved
+        self.assertLessEqual(len(m.on_map), 6)        # the cap is really applied (plus group fillers)
         for name in ("Weekly tip", "Welcome", "Survey start"):
             self.assertIn(next(u for u in m.flows if m.name(u) == name), m.on_map, name)
 
