@@ -229,7 +229,7 @@ def org(refresh=False):
         except api.GlificError as e:
             raise ToolError(f"Could not read the account: {e}") from e
         name = mask(str(settings.get("name") or "")).strip() or "Glific chatbot"
-        m = Model(flows, triggers, Settings(project=name), org=settings)
+        m = Model(flows, triggers, Settings(project=name, tz=os.environ.get("GLIFIC_TZ") or "Asia/Kolkata"), org=settings)
         _org = {"model": m, "facts": build_facts(m), "pulled": datetime.now().isoformat(timespec="seconds")}
     return _org
 

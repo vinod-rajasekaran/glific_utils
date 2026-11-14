@@ -255,6 +255,11 @@ class OrgToolsTest(unittest.IsolatedAsyncioTestCase):
         self.mod.session(post=fixture_glific(flows, triggers))
         self.assertEqual((await self.data("get_org_overview"))["counts"]["active_flows"], 8)
 
+    async def test_schedules_use_the_configured_time_zone(self):
+        with mock.patch.dict(os.environ, {"GLIFIC_TZ": "UTC"}):
+            got = await self.data("get_org_facts")
+        self.assertTrue(any("UTC" in t["schedule"] and "(" not in t["schedule"] for t in got["triggers"]), got["triggers"])
+
     async def test_no_saved_org_map_says_how_to_build_one(self):
         r = await self.call("get_org_map")
         self.assertTrue(r.is_error)
