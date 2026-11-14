@@ -267,7 +267,7 @@ class OverMasking(unittest.TestCase):
 
     def test_cloud_run_host_kept(self):
         host = "volunteer-digital-onboarding-238853749053.europe-west1.run.app"
-        self.assertIn("volunteer-digital-onboarding", uf.clean_text(f"calls {host} (validate)", set()))
+        self.assertEqual(uf.clean_text(f"calls {host} (validate)", set()), f"calls {host} (validate)")
         self.assertIn(host, ra.webhook_desc({"url": f"https://{host}/validate"}))
         m = model(scope_all=True)
         self.assertNotIn("[secret]", json.dumps(uf.build_facts(m)))

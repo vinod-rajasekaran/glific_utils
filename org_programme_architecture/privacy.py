@@ -20,6 +20,7 @@ BARE_LINK = re.compile(r"\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}/[^\s\"'<>)]*")      
 # and a space), so "+91 98765 43210" and "(022) 2345 6789" match but a range like "2501 - 4000" does not
 PHONE = re.compile(r"\+?\(?\d(?:(?:[\s.\-]|\)\s?)?\d){7,}")
 ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+HOSTNAME = re.compile(r"\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b")
 SECRET = re.compile(
     r"(?<=Bearer )\S+"                                      # bearer tokens
     r"|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"   # JWTs
@@ -68,12 +69,17 @@ def mask(text, staff=()):
             names.update(p for p in re.split(r"[\s.]+", n) if len(p) > 2)
     for name in sorted(names, key=len, reverse=True):
         out = _name_pattern(name).sub("a staff contact", out)
-    dates = ISO_DATE.findall(out)
-    out = ISO_DATE.sub("\x00", out)
+    # Dates and hostnames (a Cloud Run host carries a long project number) are kept out of the
+    # phone rule, then put back
+    kept = []
+
+    def keep(mm):
+        kept.append(mm.group(0))
+        return f"\x00{len(kept) - 1}\x00"
+    out = ISO_DATE.sub(keep, out)
+    out = HOSTNAME.sub(keep, out)
     out = PHONE.sub("[number]", out)
-    for d in dates:
-        out = out.replace("\x00", d, 1)
-    return out
+    return re.sub(r"\x00(\d+)\x00", lambda mm: kept[int(mm.group(1))], out)
 
 
 def clean_text(text, staff_names, limit=EXCERPT_CHARS):
