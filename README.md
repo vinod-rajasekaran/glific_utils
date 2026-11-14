@@ -1,12 +1,15 @@
 # Glific Utils
 
-Python utilities for understanding, auditing and backing up a [Glific](https://glific.org) chatbot through its GraphQL API. Each use case is a **feature**: a folder with its own scripts, README and tests, run with one command from the repo root.
+Python tools for understanding, auditing and working with a [Glific](https://glific.org) chatbot through its GraphQL API. Each use case is a **feature**: a folder with its own scripts, README and tests, run with one command from the repo root.
 
 ## Features
 
 | Feature | What it does | Run |
 |---|---|---|
 | [`org_programme_architecture/`](org_programme_architecture/) | Pulls every active flow, trigger and the organisation's flow settings, and builds one page, `org_map.html`: the bot's programmes (read by Claude, or grouped by their links with `--no-claude`), a graph of how each programme's flows start and connect, and the full flow graph | `./org_map.sh` |
+| [`glific_mcp/`](glific_mcp/) | An MCP server that lets Claude (or any MCP client) read the account's flows with full definitions, collections, templates, tags, languages and settings; write tools only when switched on. **Moved here from [`glific-mcp`](https://github.com/vinod-rajasekaran/glific-mcp)** and rewritten in Python | `./glific_mcp.sh` |
+
+Shared code (the Glific client, run folders, credential redaction and masking of personal data) lives in [`glific_common/`](glific_common/).
 
 Each feature's README covers what it does, its options, its output and its privacy rules.
 
@@ -43,6 +46,7 @@ export GLIFIC_PASSWORD=secret
 cp .env.example .env    # fill in URL, phone, password
 ./org_map.sh            # fetch flows, triggers and settings, build org_map.html, open it
 ./org_map.sh --help     # all options
+./glific_mcp.sh --check # check the MCP server against your account, then see glific_mcp/README.md to connect it
 ```
 
 The run scripts work from any directory; relative paths you pass (such as `--from-json ./export`) are read from the directory you run them in.
@@ -57,13 +61,14 @@ Every run writes to a new folder, `output/<feature>/<YYYY-MM-DD_HH-MM-SS>/`, at 
 python3 -m unittest discover -s tests -t .
 ```
 
-Tests live in `tests/<feature>/`, use made-up data in that folder's `fixtures/`, and make no network calls. Use `.venv/bin/python3` if you installed the optional packages there.
+Tests live in `tests/<feature>/` (shared code in `tests/glific_common/`), use made-up data, and make no network calls. Use `.venv/bin/python3`: the MCP server's tests are skipped where the `mcp` package is not installed.
 
 ## Security
 
 - Never commit credentials. `.env` is git-ignored.
 - Webhook credentials (auth headers, API keys in URLs and bodies) are blanked before `flows.json` is saved. See the [feature README](org_programme_architecture/README.md#notes).
 - When an Anthropic API key is set, `org_map.sh` sends cleaned facts and short message excerpts to the Anthropic API. Staff names, phone numbers, emails and links are stripped first, and the exact request is saved as `claude_input.json`. Use `--no-claude` (or leave the key unset) to send nothing.
+- The MCP server returns what its tools read to the assistant's model provider. It never reads contacts or message history, blanks webhook credentials and masks phone numbers, emails and links in message text; tools that change the account or message people are off unless `GLIFIC_MCP_ALLOW_WRITES=1`. See [its README](glific_mcp/README.md#privacy).
 - Exported JSON can contain message content, contact fields and webhook URLs, and the generated pages contain flow, group and sheet names. They stay in the git-ignored `output/` folder. Treat them as sensitive and don't share them.
 
 ## Adding a feature

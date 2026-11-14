@@ -89,16 +89,21 @@ class Session:
     once more if Glific rejects the token."""
 
     def __init__(self, post=post):
-        self._post, self._token = post, None
+        self.post, self._token = post, None
 
-    def query(self, query, variables=None):
+    def call(self, fn):
+        """fn(token), logging in first if needed and once more if the token has expired."""
         for attempt in (1, 2):
             if self._token is None:
-                self._token = login(post=self._post)
+                self._token = login(post=self.post)
             try:
-                return graphql(query, variables, self._token, post=self._post)
+                return fn(self._token)
             except (urllib.error.HTTPError, GlificError) as e:
                 expired = getattr(e, "code", None) == 401 or "unauthor" in str(e).lower()
                 if not expired or attempt == 2:
                     raise
                 self._token = None
+
+    def query(self, query, variables=None):
+        """The data of one GraphQL query."""
+        return self.call(lambda token: graphql(query, variables, token, post=self.post))
