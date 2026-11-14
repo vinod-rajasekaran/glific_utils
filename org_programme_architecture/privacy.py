@@ -16,7 +16,9 @@ EXCERPT_CHARS = 200
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 URL = re.compile(r"(?:https?://|\bwww\.)[^\s\"'<>)]+", re.I)
 BARE_LINK = re.compile(r"\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}/[^\s\"'<>)]*")      # host.tld/path without a scheme
-PHONE = re.compile(r"\+?\(?\d(?:[\s.\-()]*\d){7,}")    # 8 or more digits, with spaces, dots, dashes or brackets between
+# 8 or more digits with at most one separator between them (space, dot, dash, or a closing bracket
+# and a space), so "+91 98765 43210" and "(022) 2345 6789" match but a range like "2501 - 4000" does not
+PHONE = re.compile(r"\+?\(?\d(?:(?:[\s.\-]|\)\s?)?\d){7,}")
 ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 SECRET = re.compile(
     r"(?<=Bearer )\S+"                                      # bearer tokens
@@ -24,7 +26,9 @@ SECRET = re.compile(
     r"|\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]+"              # Stripe-style keys
     r"|\bxox[abprs]-[A-Za-z0-9-]+"                          # Slack tokens
     r"|\bAIza[0-9A-Za-z_-]{20,}"                           # Google API keys
-    r"|\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{32,}\b")   # long mixed tokens
+    r"|(?<![\w.-])(?=[A-Za-z0-9_]*\d)(?=[A-Za-z0-9_]*[A-Za-z])[A-Za-z0-9_]{32,}(?![\w.-])")
+# The long-token rule leaves out hyphens and dots, so hostnames such as
+# volunteer-digital-onboarding-123456789012.europe-west1.run.app are not taken for keys
 VIRAMA_ETC = {"\u094d", "\u09cd", "\u0a4d", "\u0acd", "\u0b4d", "\u0bcd", "\u0c4d", "\u0ccd", "\u0d4d", "\u200c", "\u200d"}
 
 

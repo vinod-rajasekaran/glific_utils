@@ -255,3 +255,19 @@ class M4DeadCode(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OverMasking(unittest.TestCase):
+    def test_number_ranges_are_not_phones(self):
+        self.assertEqual(uf.clean_text("birth_weight (1 - 2500 or 2501 - 4000)", set()), "birth_weight (1 - 2500 or 2501 - 4000)")
+
+    def test_phones_still_masked(self):
+        for p in ("+91 98765 43210", "98765-43210", "(022) 2345 6789", "98765.43210", "9876543210"):
+            self.assertNotRegex(uf.clean_text(f"call {p} now", set()), r"\d{4}", p)
+
+    def test_cloud_run_host_kept(self):
+        host = "volunteer-digital-onboarding-238853749053.europe-west1.run.app"
+        self.assertIn("volunteer-digital-onboarding", uf.clean_text(f"calls {host} (validate)", set()))
+        self.assertIn(host, ra.webhook_desc({"url": f"https://{host}/validate"}))
+        m = model(scope_all=True)
+        self.assertNotIn("[secret]", json.dumps(uf.build_facts(m)))
