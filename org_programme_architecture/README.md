@@ -7,16 +7,22 @@ Pulls every active flow, every trigger and the organisation's flow settings from
 
 | File | What it does | Output |
 |---|---|---|
-| [`build_org_map.py`](build_org_map.py) | **Runs everything:** pulls the data and builds the page | all files below |
-| [`glific_get_flows.py`](glific_get_flows.py) | Every **active** flow, with its full definition (credentials blanked) | `flows.json` |
+| [`build_org_map.py`](build_org_map.py) | **Runs everything:** pulls the data (or reads a saved run) and builds the page | all files below |
+| [`glific_get_flows.py`](glific_get_flows.py) | Every **active** flow, with its full definition (credentials and sticky-note tokens blanked) | `flows.json` |
 | [`glific_get_triggers.py`](glific_get_triggers.py) | Every **trigger**, active and inactive | `triggers.json` |
 | [`glific_get_settings.py`](glific_get_settings.py) | The **organisation settings** that start flows: default, new contact, opt-in, out-of-office and regex flows | `settings.json` |
-| [`render_graph.py`](render_graph.py) | The model of flows, triggers, groups and links, and the graph | `org_map.html` |
-| [`graph_layout.py`](graph_layout.py) | Layered left-to-right graph layout (no dependencies) | |
 | [`privacy.py`](privacy.py) | Masking of phone numbers, emails, links, secrets and staff names, used everywhere | |
+| [`flow_reading.py`](flow_reading.py) | Reads one flow: reachable nodes and a summary of what it calls, sends, sets, moves and logs | |
+| [`model.py`](model.py) | The model of an export: scope, starts, callers, data links and the graph's flows | |
+| [`graph_view.py`](graph_view.py) | The boxes and edges for a set of flows (a `GraphView`); never changes the model | |
+| [`graph_layout.py`](graph_layout.py) | Layered left-to-right graph layout (no dependencies) | |
+| [`graph_svg.py`](graph_svg.py) | Draws a `GraphView` as SVG, one small function per kind of box | |
+| [`cards.py`](cards.py), [`sections.py`](sections.py), [`schedules.py`](schedules.py), [`text.py`](text.py) | Flow and trigger cards; the tables under a graph; schedules in plain words; text helpers | |
+| [`render_graph.py`](render_graph.py) | The flow graph page | `org_map.html` |
 | [`programme_facts.py`](programme_facts.py) | Cleaned facts about every flow, with IDs, for Claude | `claude_input.json` |
 | [`programme_claude.py`](programme_claude.py) | One Claude call ([prompt](PROGRAMME_PROMPT.md)), then checks every reference against the facts | `claude_output.json` |
 | [`render_programmes.py`](render_programmes.py) | The programme page, with the full graph as one view | `org_map.html` |
+| [`assets/`](assets/) | Page markup, styles and scripts, inlined into the page at build time | |
 
 Nothing is tied to a particular org: the tag to focus the graph on is the `--tag` input, and the programme page reads every active flow.
 
@@ -62,7 +68,7 @@ journey Intervention areas, fed by CommCare: f:Home visit | f:Collect phone and 
 Campaign messages are built by hand in Google Sheets.
 ```
 
-Keep all the scripts in this folder: they import from each other. Tests: `python3 -m unittest discover -s tests` from the repo root (they use a made-up org in `tests/fixtures`; `GLIFIC_OUTPUT_ROOT` and `GLIFIC_NO_DOTENV` keep them away from your `output/` and `.env`).
+Keep all the scripts in this folder: they import from each other. Tests: `python3 -m unittest discover -s tests` from the repo root. There is one test file per module, with shared helpers in `tests/helpers.py`; they use a made-up org in `tests/fixtures`, and `GLIFIC_OUTPUT_ROOT` and `GLIFIC_NO_DOTENV` keep them away from your `output/` and `.env`. `tests/test_snapshots.py` checks the pages byte for byte; after an intended change to the page, regenerate them with `UPDATE_SNAPSHOTS=1`.
 
 ---
 

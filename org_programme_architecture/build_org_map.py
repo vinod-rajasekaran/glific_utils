@@ -49,7 +49,7 @@ def check_inputs(flows, triggers, paths=()):
                  "Export the full flow definitions (glific_get_flows.py does this), ideally filtered by the tag.")
 
 
-def main():
+def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--from-json", metavar="DIR", type=Path, help="folder with flows.json and triggers.json; re-renders the HTML only")
     p.add_argument("--project", default=os.environ.get("GLIFIC_PROJECT", "Glific chatbot"), help="project name for the page title")
@@ -74,38 +74,13 @@ def main():
             args.date = date.fromisoformat(args.from_json.name[:10]) if args.from_json else date.today()
         except ValueError:
             args.date = date.today()
+    return args
 
-    if args.from_json:
-        paths = (args.from_json / "flows.json", args.from_json / "triggers.json")
-        missing = [str(x) for x in paths if not x.is_file()]
-        if missing:
-            sys.exit(f"Not found: {', '.join(missing)}. --from-json needs a folder holding flows.json and triggers.json.")
-        flows, triggers = (json.loads(x.read_text()) for x in paths)
-        check_inputs(flows, triggers, paths)
-        out_dir = run_dir()
-        for x in paths:   # keep each run folder complete; the source folder stays as it was
-            shutil.copy2(x, out_dir / x.name)
-        print(f"Copied {args.from_json}/{{flows,triggers}}.json to {out_dir}", file=sys.stderr)
-        org = {}
-        if (args.from_json / "settings.json").is_file():
-            org = json.loads((args.from_json / "settings.json").read_text())
-            shutil.copy2(args.from_json / "settings.json", out_dir / "settings.json")
-        else:
-            print("No settings.json in that folder, so flows started by Glific settings show as 'No start found'.", file=sys.stderr)
-    else:
-        token = login()
-        flows = fetch_flows(token)
-        triggers = fetch_triggers(token)
-        check_inputs(flows, triggers)
-        out_dir = run_dir()
-        print(f"Saved {save_json(flows, 'flows.json', out_dir)}", file=sys.stderr)
-        print(f"Saved {save_json(triggers, 'triggers.json', out_dir)}", file=sys.stderr)
-        org = fetch_settings(token)
-        print(f"Saved {save_json(org, 'settings.json', out_dir)}", file=sys.stderr)
 
-    settings = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
-                        notes=args.notes.read_text() if args.notes else "")
-    graph_model = Model(flows, triggers, settings, org=org)      # built once: the graph page and the programme page's full graph
+def main():
+    args = parse_args()
+    flows, triggers, org, out_dir = load_saved(args.from_json) if args.from_json else fetch_live()
+    graph_model = Model(flows, triggers, settings_from(args), org=org)   # built once: the graph page and the programme page's full graph
     page, findings = render_page(graph_model, out=sys.stderr)
     print("\nFindings:" if findings else "\nFindings: none", file=sys.stderr)
     for f in findings:
@@ -117,6 +92,47 @@ def main():
     path.write_text(page, encoding="utf-8")
     print(f"\nSaved {path}", file=sys.stderr)
     print(path.resolve())  # the only line on stdout, so wrappers can open it
+
+
+def settings_from(args, scope_all=False):
+    return Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
+                    notes=args.notes.read_text() if args.notes else "", scope_all=scope_all)
+
+
+def load_saved(folder):
+    """flows.json, triggers.json and (if there) settings.json from an earlier run, copied into a
+    new run folder so it is complete; the source folder stays as it was."""
+    paths = (folder / "flows.json", folder / "triggers.json")
+    missing = [str(x) for x in paths if not x.is_file()]
+    if missing:
+        sys.exit(f"Not found: {', '.join(missing)}. --from-json needs a folder holding flows.json and triggers.json.")
+    flows, triggers = (json.loads(x.read_text()) for x in paths)
+    check_inputs(flows, triggers, paths)
+    out_dir = run_dir()
+    for x in paths:
+        shutil.copy2(x, out_dir / x.name)
+    print(f"Copied {folder}/{{flows,triggers}}.json to {out_dir}", file=sys.stderr)
+    org = {}
+    if (folder / "settings.json").is_file():
+        org = json.loads((folder / "settings.json").read_text())
+        shutil.copy2(folder / "settings.json", out_dir / "settings.json")
+    else:
+        print("No settings.json in that folder, so flows started by Glific settings show as 'No start found'.", file=sys.stderr)
+    return flows, triggers, org, out_dir
+
+
+def fetch_live():
+    """Log in to Glific and save flows, triggers and settings to a new run folder."""
+    token = login()
+    flows = fetch_flows(token)
+    triggers = fetch_triggers(token)
+    check_inputs(flows, triggers)
+    out_dir = run_dir()
+    print(f"Saved {save_json(flows, 'flows.json', out_dir)}", file=sys.stderr)
+    print(f"Saved {save_json(triggers, 'triggers.json', out_dir)}", file=sys.stderr)
+    org = fetch_settings(token)
+    print(f"Saved {save_json(org, 'settings.json', out_dir)}", file=sys.stderr)
+    return flows, triggers, org, out_dir
 
 
 def programme_step(args, flows, triggers, out_dir, org, graph_model):
@@ -133,8 +149,7 @@ def programme_step(args, flows, triggers, out_dir, org, graph_model):
 
 
 def _programme_step(args, flows, triggers, out_dir, org, graph_model):
-    st = Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
-                  notes=args.notes.read_text() if args.notes else "", scope_all=True)
+    st = settings_from(args, scope_all=True)
     m = Model(flows, triggers, st, org=org)
     facts = build_facts(m)
     save_json({"model": MODEL, "system": PROMPT_PATH.read_text(encoding="utf-8"), "facts": facts}, "claude_input.json", out_dir)

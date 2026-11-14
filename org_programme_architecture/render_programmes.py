@@ -270,7 +270,7 @@ def programme_view(cx, prog, findings, tag):
              + (f'<h3 class="ph w">What to watch across it</h3>{test_note}' if test_note and not prog["watch"] else "")
              + (statements(cx, "What to watch across it", prog["watch"], " w").replace('<ul class="sts">', f'{test_note}<ul class="sts">', 1)
                 if prog["watch"] else "")
-             + (f'<h3 class="ph">Its parts</h3>' if len(parts) > 1 else "") + sections
+             + ('<h3 class="ph">Its parts</h3>' if len(parts) > 1 else "") + sections
              + '<p class="hint">Select a box in the graph to see that flow in detail. Faded boxes belong to other programmes.</p></div>')
     legend = f'<div class="partlegend">{"".join(part_chip(part_no[u["id"]], u["name"]) for u in parts)}</div>' if len(parts) > 1 else ""
     cards = ""

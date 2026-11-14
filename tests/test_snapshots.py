@@ -3,41 +3,35 @@ unnoticed. After an intended change, regenerate with:  UPDATE_SNAPSHOTS=1 python
 """
 import json
 import os
-import sys
 import unittest
-from datetime import date
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "org_programme_architecture"))
+from tests.helpers import ROOT, TODAY, hostile, load  # also puts org_programme_architecture on sys.path
 
+import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
 import programme_facts as uf  # noqa: E402
 import render_graph as ra  # noqa: E402
 import render_programmes as ru  # noqa: E402
-from tests.test_review3 import hostile  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 SNAP = ROOT / "tests" / "snapshots"
-TODAY = date(2026, 11, 13)
 ORG = {"newcontactFlowId": "001", "outOfOffice": {"defaultFlowId": "008"}}
 
 
 def pages():
-    flows = json.loads((FIX / "flows.json").read_text())
-    triggers = json.loads((FIX / "triggers.json").read_text())
+    flows, triggers = load()
     out = {}
-    out["graph.html"] = ra.render_html(flows, triggers, ra.Settings(project="Demo", tag="Demo", today=TODAY), org=ORG)[0]
-    out["graph_notag.html"] = ra.render_html(flows, triggers, ra.Settings(project="Demo", today=TODAY), org=ORG)[0]
-    st = ra.Settings(project="Demo", tag="Demo", scope_all=True, today=TODAY, notes="journey Field: f:Visit | c:Welcome")
-    m = ra.Model(flows, triggers, st, org=ORG)
+    out["graph.html"] = ra.render_html(flows, triggers, md.Settings(project="Demo", tag="Demo", today=TODAY), org=ORG)[0]
+    out["graph_notag.html"] = ra.render_html(flows, triggers, md.Settings(project="Demo", today=TODAY), org=ORG)[0]
+    st = md.Settings(project="Demo", tag="Demo", scope_all=True, today=TODAY, notes="journey Field: f:Visit | c:Welcome")
+    m = md.Model(flows, triggers, st, org=ORG)
     facts = uf.build_facts(m)
     v, p = uc.validate(json.loads((FIX / "claude_output_programmes.json").read_text()), facts)
-    gm = ra.Model(flows, triggers, ra.Settings(project="Demo", tag="Demo", today=TODAY), org=ORG)
+    gm = md.Model(flows, triggers, md.Settings(project="Demo", tag="Demo", today=TODAY), org=ORG)
     out["programmes.html"] = ru.render_programme_page(m, facts, v, p, st, graph_model=gm)
     out["facts.json"] = json.dumps(facts, indent=1, ensure_ascii=False, sort_keys=True)
     hf, ht = hostile()
-    out["hostile_graph.html"] = ra.render_html(hf, ht, ra.Settings(project="Demo", today=TODAY))[0]
+    out["hostile_graph.html"] = ra.render_html(hf, ht, md.Settings(project="Demo", today=TODAY))[0]
     return out
 
 

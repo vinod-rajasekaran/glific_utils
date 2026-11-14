@@ -1,14 +1,18 @@
+"""The command line, run as a subprocess on the made-up org."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from tests.helpers import ROOT, FIX, SETTINGS  # also puts org_programme_architecture on sys.path
+import privacy as pv  # noqa: E402
+
+
 BUILD = ROOT / "org_programme_architecture" / "build_org_map.py"
-FIX = ROOT / "tests" / "fixtures"
 
 
 def run(*args, **env):
@@ -57,6 +61,42 @@ class BuildCliTest(unittest.TestCase):
         p, _ = run()
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('class="fgraph"', Path(p.stdout.split()[0]).read_text())
+
+
+class StepNeverLosesGraphPage(unittest.TestCase):
+    def test_clean_text_survives_odd_urls(self):
+        out = pv.clean_text("see https://[your-link] and https://user:pw@host.org/x?token=1", set())
+        self.assertNotIn("pw@", out)
+        self.assertNotIn("token", out)
+
+    def test_unexpected_error_still_prints_graph_page(self):
+        bad = tempfile.mkdtemp()
+        (Path(bad) / "claude_output.json").write_text(json.dumps({"use_cases": [{"name": "x", "flows": 5}]}))
+        out = tempfile.mkdtemp()
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("GLIFIC_", "ANTHROPIC_"))}
+        env.update(GLIFIC_OUTPUT_ROOT=out, GLIFIC_NO_DOTENV="1")
+        p = subprocess.run([sys.executable, str(ROOT / "org_programme_architecture" / "build_org_map.py"),
+                            "--from-json", str(FIX), "--reuse-claude", bad], capture_output=True, text=True, env=env)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("was skipped", p.stderr)
+        self.assertTrue(p.stdout.split()[0].endswith("org_map.html"))
+
+
+class SettingsCliTest(unittest.TestCase):
+    def test_from_json_reads_settings(self):
+        src = Path(tempfile.mkdtemp())
+        for n in ("flows.json", "triggers.json"):
+            shutil.copy(FIX / n, src / n)
+        (src / "settings.json").write_text(json.dumps(SETTINGS))
+        out = tempfile.mkdtemp()
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("GLIFIC_", "ANTHROPIC_"))}
+        env.update(GLIFIC_OUTPUT_ROOT=out, GLIFIC_NO_DOTENV="1")
+        p = subprocess.run([sys.executable, str(ROOT / "org_programme_architecture" / "build_org_map.py"),
+                            "--from-json", str(src), "--date", "2026-11-13"], capture_output=True, text=True, env=env)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        page = Path(p.stdout.split()[0])
+        self.assertTrue((page.parent / "settings.json").is_file())
+        self.assertIn("Glific setting", page.read_text())
 
 
 if __name__ == "__main__":

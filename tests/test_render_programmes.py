@@ -1,39 +1,65 @@
+"""The programme page: cards, views, panes, labels and evidence."""
 import json
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
+from collections import Counter
 from datetime import date
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "org_programme_architecture"))
-
-import render_graph as ra  # noqa: E402
-import render_programmes as ru  # noqa: E402
+from tests.helpers import ROOT, FIX, U, load, model, raw, programmes_raw, validated, render_demo, by_name  # also puts org_programme_architecture on sys.path
+import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
 import programme_facts as uf  # noqa: E402
+import render_graph as ra  # noqa: E402
+import render_programmes as ru  # noqa: E402
 
-FIX = ROOT / "tests" / "fixtures"
-U = lambda n: f"00000000-0000-4000-8000-{n:012d}"  # noqa: E731
 
+class ProgrammeRenderTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        m, facts, v, p, st = validated("claude_output_programmes.json")
+        flows = json.loads((FIX / "flows.json").read_text())
+        triggers = json.loads((FIX / "triggers.json").read_text())
+        gm = md.Model(flows, triggers, md.Settings(project="Demo", tag="Demo", today=date(2026, 11, 13)))
+        cls.page = ru.render_programme_page(m, facts, v, p, st, graph_model=gm)
+        i = cls.page.index('id="home"')
+        cls.home = cls.page[i:cls.page.index("</section>", i)]
 
-def render():
-    flows = json.loads((FIX / "flows.json").read_text())
-    triggers = json.loads((FIX / "triggers.json").read_text())
-    st = ra.Settings(project="Demo bot", scope_all=True, today=date(2026, 11, 13))
-    m = ra.Model(flows, triggers, st)
-    facts = uf.build_facts(m)
-    validated, problems = uc.validate(json.loads((FIX / "claude_output.json").read_text()), facts)
-    return ru.render_programme_page(m, facts, validated, problems, st), validated
+    def test_home_lists_programmes_with_parts(self):
+        self.assertEqual(self.home.count('href="#uc-healthy-families"'), 1)
+        self.assertEqual(self.home.count('href="#uc-tests"'), 1)
+        self.assertNotIn('href="#uc-weekly-tips"', self.home)
+        self.assertIn("Weekly pregnancy tips", self.home)
+        self.assertIn("Survey", self.home)
+
+    def test_one_view_and_graph_per_programme(self):
+        self.assertIn('id="uc-healthy-families"', self.page)
+        self.assertIn('id="healthy-families-graph"', self.page)
+        self.assertNotIn('id="weekly-tips-graph"', self.page)
+
+    def test_boxes_marked_by_part(self):
+        view = self.page[self.page.index('id="uc-healthy-families"'):]
+        view = view[:view.index("</section>")]
+        self.assertIn('class="pstripe p1"', view)
+        self.assertIn('class="pstripe p2"', view)
+
+    def test_full_graph_is_a_view(self):
+        self.assertIn('href="#uc--graph"', self.home)
+        view = self.page[self.page.index('id="uc--graph"'):]
+        self.assertIn('id="-graph-graph"', view[:view.index("</section>")])
+
+    def test_pane_has_part_sections(self):
+        view = self.page[self.page.index('id="uc-healthy-families"'):]
+        self.assertIn('class="part"', view)
+        self.assertIn("Weekly pregnancy tips", view[:view.index("</section>")])
 
 
 class RenderTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.page, cls.uc = render()
+        cls.page, cls.uc = render_demo()
         i = cls.page.index('id="home"')
         cls.home = cls.page[i:cls.page.index("</section>", i)]
 
@@ -90,6 +116,105 @@ class RenderTest(unittest.TestCase):
     def test_evidence_shown_with_statement(self):
         self.assertIn("Welcome to the Healthy Families service", self.page)
         self.assertIn('class="conf c-clear"', self.page)
+
+
+class ClaudeTextLabelled(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        m = model(project="Demo", scope_all=True)
+        f = uf.build_facts(m)
+        v, p = uc.validate(raw(), f)
+        cls.page = ru.render_programme_page(m, f, v, p, m.st)
+        i = cls.page.index('id="home"')
+        cls.home = cls.page[i:cls.page.index('<h2 style="margin:26px', i) + 4000]
+
+    def test_cards_are_labelled(self):
+        self.assertGreaterEqual(self.home.count("Claude’s reading"), 3)
+
+    def test_system_pill_keeps_host(self):
+        self.assertIn("api.example.org", self.home)
+        self.assertIn('class="pill2 sys claude"', self.home)
+
+    def test_counts_are_split(self):
+        self.assertNotIn("to check", self.page)
+        self.assertIn("concern", self.page)
+
+
+class ReservedGraphIds(unittest.TestCase):
+    def test_programmes_named_graph_or_all_do_not_collide(self):
+        r = programmes_raw()
+        r["programmes"][0]["id"] = "graph"
+        r["programmes"][1]["id"] = "all"
+        m = model(scope_all=True, project="Demo")
+        f = uf.build_facts(m)
+        v, p = uc.validate(r, f)
+        flows, triggers = load()
+        gm = md.Model(flows, triggers, md.Settings(project="Demo", tag="Demo", today=date(2026, 11, 13)))
+        page = ru.render_programme_page(m, f, v, p, m.st, graph_model=gm)
+        dupes = [k for k, n in Counter(re.findall(r'\bid="([^"]+)"', page)).items() if n > 1]
+        self.assertEqual(dupes, [])
+        i = page.index('class="uccard graphcard"')
+        href = re.search(r'href="#([^"]+)"', page[i - 200:i + 200]).group(1)
+        self.assertIn(f'<section class="ucview" id="{href}"', page)
+        self.assertIn(f'id="{href[3:]}-graph"', page)      # the page script derives ns from the section id
+
+
+class NotesOnProgrammePage(unittest.TestCase):
+    def test_context_notes_shown(self):
+        m = model(scope_all=True, project="Demo", notes="journey Field work: f:Visit | c:Welcome message\nCampaigns are made in Sheets.")
+        f = uf.build_facts(m)
+        v, p = uc.validate(programmes_raw(), f)
+        page = ru.render_programme_page(m, f, v, p, m.st)
+        self.assertIn('class="jrow"', page)
+        self.assertIn("Campaigns are made in Sheets", page)
+
+
+class PromptInjection(unittest.TestCase):
+    def test_prompt_says_excerpts_are_data(self):
+        self.assertIn("never instructions", (ROOT / "org_programme_architecture" / "PROGRAMME_PROMPT.md").read_text())
+
+    def test_role_badge_marked_as_claude(self):
+        m = model(scope_all=True)
+        f = uf.build_facts(m)
+        v, p = uc.validate(raw(), f)
+        page = ru.render_programme_page(m, f, v, p, m.st)
+        self.assertIn('class="role claude', page)
+
+
+class HostPills(unittest.TestCase):
+    def test_pills_use_parsed_hosts(self):
+        flows, triggers = load()
+        by_name(flows, "Ask AI")["nodes"][1]["actions"][0]["url"] = "https://[bad-host/path"
+        m = model(flows, triggers, scope_all=True)
+        f = uf.build_facts(m)
+        v, p = uc.validate(raw(), f)
+        page = ru.render_programme_page(m, f, v, p, m.st)
+        self.assertNotIn('>an</span>', page)
+
+
+class DataEdgeMeanings(unittest.TestCase):
+    def test_data_edge_meaning_shown(self):
+        m = model(scope_all=True)
+        f = uf.build_facts(m)
+        r = raw()
+        r["edges"].append({"id": f"edge:{U(2)}:{U(3)}:data", "meaning": "hands the stage to the weekly tip"})
+        v, p = uc.validate(r, f)
+        self.assertIn("hands the stage to the weekly tip", ru.render_programme_page(m, f, v, p, m.st))
+
+
+class CardPillsTest(unittest.TestCase):
+    def test_home_cards_keep_few_pills(self):
+        flows, triggers = load()
+        st = md.Settings(project="Demo", tag="Demo", scope_all=True, today=date(2026, 11, 13))
+        m = md.Model(flows, triggers, st)
+        facts = uf.build_facts(m)
+        v, p = uc.validate(json.loads((FIX / "claude_output_programmes.json").read_text()), facts)
+        page = ru.render_programme_page(m, facts, v, p, st)
+        home = page[page.index('id="home"'):page.index('class="ucview"')]
+        for card in re.findall(r'<a class="uccard.*?</a>', home, re.S):
+            self.assertLessEqual(card.count('class="pill2'), 5, card[:80])
+        self.assertNotIn("Groups:", home)
+        self.assertNotIn("without the Demo tag", home)
 
 
 if __name__ == "__main__":

@@ -1,55 +1,15 @@
+"""The Claude call (with a stand-in client) and the validation of its answer."""
 import copy
 import json
-import sys
 import unittest
 from datetime import date
-from pathlib import Path
 from types import SimpleNamespace
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "org_programme_architecture"))
-
-import render_graph as ra  # noqa: E402
+from tests.helpers import FIX, U, model, facts, raw, programmes_raw, validated, FakeClient  # also puts org_programme_architecture on sys.path
+import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
 import programme_facts as uf  # noqa: E402
-
-FIX = ROOT / "tests" / "fixtures"
-U = lambda n: f"00000000-0000-4000-8000-{n:012d}"  # noqa: E731
-
-
-def facts():
-    flows = json.loads((FIX / "flows.json").read_text())
-    triggers = json.loads((FIX / "triggers.json").read_text())
-    return uf.build_facts(ra.Model(flows, triggers, ra.Settings(scope_all=True, today=date(2026, 11, 13))))
-
-
-def raw():
-    return json.loads((FIX / "claude_output.json").read_text())
-
-
-class FakeClient:
-    """Stands in for anthropic.Anthropic(): returns the queued outputs in order and records each request."""
-
-    def __init__(self, *outputs, stop_reason="end_turn"):
-        self.outputs, self.calls, self.stop_reason = list(outputs), [], stop_reason
-        self.beta = SimpleNamespace(messages=SimpleNamespace(stream=self._stream))
-
-    def _stream(self, **kw):
-        self.calls.append(kw)
-        nxt = self.outputs.pop(0)
-        if isinstance(nxt, Exception):
-            raise nxt
-        text = json.dumps(nxt)
-        msg = SimpleNamespace(stop_reason=self.stop_reason, stop_details=None,
-                              content=[SimpleNamespace(type="thinking", thinking=""), SimpleNamespace(type="text", text=text)])
-
-        class Ctx:
-            def __enter__(self_):
-                return SimpleNamespace(get_final_message=lambda: msg)
-
-            def __exit__(self_, *a):
-                return False
-        return Ctx()
+import render_programmes as ru  # noqa: E402
 
 
 class ValidateTest(unittest.TestCase):
@@ -151,6 +111,203 @@ class CallTest(unittest.TestCase):
             elif node.get("type") == "array":
                 walk(node["items"])
         walk(copy.deepcopy(uc.SCHEMA))
+
+
+class ProgrammeValidateTest(unittest.TestCase):
+    def setUp(self):
+        _, _, self.v, self.p, _ = validated("claude_output_programmes.json")
+        self.pr = {x["id"]: x for x in self.v["programmes"]}
+
+    def test_parts_checked(self):
+        self.assertEqual(self.pr["healthy-families"]["parts"], ["weekly-tips", "survey"])
+        self.assertTrue(any("not-a-use-case" in x for x in self.p))
+
+    def test_part_in_two_programmes_keeps_first(self):
+        self.assertEqual(self.pr["tests"]["parts"], ["tests"])
+        self.assertTrue(any("survey" in x.lower() and "already" in x for x in self.p))
+
+    def test_empty_programme_dropped(self):
+        self.assertNotIn("empty", self.pr)
+
+    def test_programme_statements_validated(self):
+        self.assertEqual(len(self.pr["healthy-families"]["story"]), 1)
+
+    def test_old_answer_wraps_each_use_case(self):
+        _, _, v, p, _ = validated("claude_output.json")
+        self.assertEqual([x["parts"] for x in v["programmes"]], [[u["id"]] for u in v["use_cases"]])
+        self.assertFalse(any("programme" in x.lower() for x in p))
+
+    def test_use_case_left_out_gets_own_programme(self):
+        raw = json.loads((FIX / "claude_output_programmes.json").read_text())
+        raw["programmes"] = raw["programmes"][:1]          # "tests" use case now in no programme
+        flows = json.loads((FIX / "flows.json").read_text())
+        triggers = json.loads((FIX / "triggers.json").read_text())
+        m = md.Model(flows, triggers, md.Settings(scope_all=True, today=date(2026, 11, 13)))
+        v, p = uc.validate(raw, uf.build_facts(m))
+        self.assertIn(["tests"], [x["parts"] for x in v["programmes"]])
+        self.assertTrue(any("not in any programme" in x for x in p))
+
+    def test_schema_has_programmes(self):
+        self.assertIn("programmes", uc.SCHEMA["properties"])
+
+
+class CompactSchemaTest(unittest.TestCase):
+    def test_schema_has_two_statement_lists(self):
+        self.assertLessEqual(json.dumps(uc.SCHEMA).count('"refs"'), 4)   # 2 statement lists, each names refs twice
+
+    def test_statements_with_sections_are_split(self):
+        raw = json.loads((FIX / "claude_output_programmes.json").read_text())
+        for u in raw["use_cases"]:
+            u["statements"] = ([dict(s, section="story") for s in u.pop("story")] +
+                               [dict(s, section="how_it_works") for s in u.pop("how_it_works")] +
+                               [dict(s, section="watch") for s in u.pop("watch")])
+        for p in raw["programmes"]:
+            p["statements"] = [dict(s, section="story") for s in p.pop("story")] + [dict(s, section="watch") for s in p.pop("watch")]
+        flows = json.loads((FIX / "flows.json").read_text())
+        triggers = json.loads((FIX / "triggers.json").read_text())
+        m = md.Model(flows, triggers, md.Settings(scope_all=True, today=date(2026, 11, 13)))
+        v, _ = uc.validate(raw, uf.build_facts(m))
+        tips = next(u for u in v["use_cases"] if u["id"] == "weekly-tips")
+        self.assertEqual((len(tips["story"]), len(tips["how_it_works"]), len(tips["watch"])), (3, 1, 1))
+        prog = next(p for p in v["programmes"] if p["id"] == "healthy-families")
+        self.assertEqual((len(prog["story"]), len(prog["watch"])), (1, 1))
+
+
+class RepairFailureKeepsFirstAnswer(unittest.TestCase):
+    def test_failed_repair_keeps_first_answer(self):
+        client = FakeClient(raw(), RuntimeError("network down"))
+        got_raw, validated, notes = uc.run_programmes(facts(), client=client)
+        self.assertEqual(len(client.calls), 2)
+        self.assertIn("weekly-tips", [u["id"] for u in validated["use_cases"]])
+        self.assertTrue(any("999999999999" in n for n in notes))
+        self.assertTrue(any("repair" in n.lower() for n in notes))
+
+
+class InventedEvidenceReported(unittest.TestCase):
+    def test_unknown_evidence_on_purpose_and_summary_is_reported(self):
+        r = raw()
+        r["flows"][0]["evidence"].append("msg:invented:9")
+        r["org_summary"]["evidence"].append("sticky:invented:1")
+        _, problems = uc.validate(r, facts())
+        self.assertTrue(any("msg:invented:9" in p for p in problems))
+        self.assertTrue(any("sticky:invented:1" in p for p in problems))
+
+
+class FallbackTextBlocks(unittest.TestCase):
+    def test_text_blocks_are_joined(self):
+        good = json.dumps({"use_cases": []})
+        msg = SimpleNamespace(stop_reason="end_turn", stop_details=None, content=[
+            SimpleNamespace(type="text", text=good[:7]), SimpleNamespace(type="fallback"), SimpleNamespace(type="text", text=good[7:])])
+
+        class Ctx:
+            def __enter__(self):
+                return SimpleNamespace(get_final_message=lambda: msg)
+
+            def __exit__(self, *a):
+                return False
+        client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(stream=lambda **kw: Ctx())))
+        self.assertEqual(uc.call_claude(facts(), client), {"use_cases": []})
+
+
+class SlugMapping(unittest.TestCase):
+    def test_parts_follow_slugged_use_case_ids(self):
+        r = programmes_raw()
+        r["use_cases"][0]["id"] = "Weekly_Tips"
+        r["programmes"][0]["parts"] = ["Weekly_Tips", "survey"]
+        v, problems = uc.validate(r, facts())
+        first = next(p for p in v["programmes"] if p["name"] == "Healthy families programme")
+        self.assertEqual(first["parts"], ["weekly-tips", "survey"])
+        self.assertFalse(any("Weekly_Tips" in p for p in problems))
+
+
+class RepairOnlyWhenItMatters(unittest.TestCase):
+    def good(self):
+        return CallTest.good(CallTest())
+
+    def test_cosmetic_problem_does_not_repair(self):
+        out = self.good()
+        out["flows"] = [f for f in out["flows"] if f["id"] != U(8)]     # one flow without a purpose
+        client = FakeClient(out)
+        _, _, notes = uc.run_programmes(facts(), client=client)
+        self.assertEqual(len(client.calls), 1)
+        self.assertTrue(any("no purpose" in n for n in notes))
+
+    def test_worse_repair_keeps_first_answer(self):
+        first = raw()
+        worse = raw()
+        worse["use_cases"] = worse["use_cases"][:1] + [{"id": "x", "name": "X", "summary": "", "kind": "journey", "flows": ["nope"],
+                                                         "story": [], "how_it_works": [], "watch": [], "confidence": "guess"}]
+        client = FakeClient(first, worse)
+        _, validated, notes = uc.run_programmes(facts(), client=client)
+        self.assertIn("survey", [u["id"] for u in validated["use_cases"]])
+        self.assertTrue(any("first answer" in n for n in notes))
+
+
+class DuplicateFlowInUseCase(unittest.TestCase):
+    def test_repeat_inside_one_use_case_dropped(self):
+        r = raw()
+        r["use_cases"][0]["flows"] = [U(1), U(1), U(3)]
+        v, problems = uc.validate(r, facts())
+        tips = next(u for u in v["use_cases"] if u["id"] == "weekly-tips")
+        self.assertEqual(tips["flows"], [U(1), U(3)])
+        self.assertTrue(any("twice" in p for p in problems))
+
+
+class StatementChecks(unittest.TestCase):
+    def test_bad_or_missing_confidence_becomes_guess(self):
+        r = raw()
+        r["use_cases"][0]["story"][0]["confidence"] = "reading From-the-export"
+        del r["use_cases"][0]["story"][1]["confidence"]
+        v, _ = uc.validate(r, facts())
+        story = next(u for u in v["use_cases"] if u["id"] == "weekly-tips")["story"]
+        self.assertEqual([s["confidence"] for s in story[:2]], ["guess", "guess"])
+
+
+class SaveAnswersOnFailure(unittest.TestCase):
+    def test_raw_answer_attached_to_error(self):
+        with self.assertRaises(uc.ProgrammeError) as cm:
+            uc.run_programmes(facts(), client=FakeClient({"use_cases": []}, {"use_cases": []}))
+        self.assertEqual(cm.exception.raw, {"use_cases": []})
+
+
+class ModelNamedFromAnswer(unittest.TestCase):
+    def test_model_recorded(self):
+        out = raw()
+        msg = SimpleNamespace(stop_reason="end_turn", stop_details=None, model="claude-opus-4-8",
+                              content=[SimpleNamespace(type="text", text=json.dumps(out))])
+
+        class Ctx:
+            def __enter__(self):
+                return SimpleNamespace(get_final_message=lambda: msg)
+
+            def __exit__(self, *a):
+                return False
+        client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(stream=lambda **kw: Ctx())))
+        got = uc.call_claude(facts(), client)
+        self.assertEqual(got["_meta"]["model"], "claude-opus-4-8")
+        m = model(scope_all=True)
+        f = uf.build_facts(m)
+        v, p = uc.validate(got, f)
+        self.assertIn("claude-opus-4-8", ru.render_programme_page(m, f, v, p, m.st))
+
+
+class FactsCached(unittest.TestCase):
+    def test_facts_block_has_cache_control(self):
+        client = FakeClient(raw())
+        uc.call_claude(facts(), client)
+        content = client.calls[0]["messages"][0]["content"]
+        self.assertEqual(content[0]["cache_control"], {"type": "ephemeral"})
+
+
+class EvidenceTypes(unittest.TestCase):
+    def test_string_evidence_is_not_read_letter_by_letter(self):
+        r = raw()
+        r["flows"][0]["evidence"] = f"msg:{U(1)}:1"
+        r["org_summary"]["evidence"] = "sticky:x:1"
+        v, problems = uc.validate(r, facts())
+        self.assertEqual(next(f for f in v["flows"] if f["id"] == U(1))["evidence"], [])
+        self.assertEqual(v["org_summary"]["evidence"], [])
+        self.assertFalse(any("IDs m, s" in p or "IDs s, t" in p for p in problems), problems)
 
 
 if __name__ == "__main__":

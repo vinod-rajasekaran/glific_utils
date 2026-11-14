@@ -10,7 +10,7 @@ the model, never from Claude.
 import json
 from collections import Counter
 
-from privacy import clean_text, host_of, mask, staff_names  # noqa: F401  (re-exported for callers and tests)
+from privacy import clean_text, host_of, mask
 
 from schedules import schedule_text
 from text import join, names, times

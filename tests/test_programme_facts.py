@@ -1,53 +1,12 @@
+"""The facts sent to Claude: shape, IDs, excerpts and masked names."""
 import json
-import re
-import sys
 import unittest
 from datetime import date
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "org_programme_architecture"))
-
-import render_graph as ra  # noqa: E402
+from tests.helpers import SETTINGS, load, model, facts, by_name  # also puts org_programme_architecture on sys.path
+import model as md  # noqa: E402
+import programme_claude as uc  # noqa: E402
 import programme_facts as uf  # noqa: E402
-
-FIX = ROOT / "tests" / "fixtures"
-
-
-def facts():
-    flows = json.loads((FIX / "flows.json").read_text())
-    triggers = json.loads((FIX / "triggers.json").read_text())
-    m = ra.Model(flows, triggers, ra.Settings(scope_all=True, today=date(2026, 11, 13)))
-    return uf.build_facts(m)
-
-
-class CleanTextTest(unittest.TestCase):
-    def test_masks_phone_and_email(self):
-        out = uf.clean_text("call 9876543210 or +91 98765-43210 or a@b.org", set())
-        self.assertNotRegex(out, r"\d{6}")
-        self.assertNotIn("a@b.org", out)
-
-    def test_strips_staff_names(self):
-        self.assertEqual(uf.clean_text("Ask Asha Rao today", {"Asha Rao"}), "Ask a staff contact today")
-
-    def test_url_to_host(self):
-        self.assertEqual(uf.clean_text("see https://docs.google.com/x/y?z=1 now", set()), "see docs.google.com now")
-
-    def test_keeps_expressions(self):
-        self.assertEqual(uf.clean_text("Hi @contact.name, week @fields.week_number", set()),
-                         "Hi @contact.name, week @fields.week_number")
-
-    def test_cuts_by_characters(self):
-        text = "नमस्ते दुनिया " * 200
-        out = uf.clean_text(text, set())
-        self.assertLessEqual(len(out), 201)
-        self.assertTrue(out.endswith("…"))
-        out.encode("utf-8").decode("utf-8")
-
-    def test_staff_name_that_names_a_flow_is_kept(self):
-        flows = {"a": {"name": "Helpline-support", "nodes": [{"actions": [
-            {"type": "send_broadcast", "contacts": [{"name": "Helpline"}, {"name": "Ravi Kumar"}]}]}]}}
-        self.assertEqual(uf.staff_names(flows), {"Ravi Kumar"})
 
 
 class FactsTest(unittest.TestCase):
@@ -84,6 +43,68 @@ class FactsTest(unittest.TestCase):
         self.assertNotIn("[redacted]", text)
         self.assertNotIn("abc123", text)
         self.assertNotIn("lead@example.org", text)
+
+
+class SizeBudget(unittest.TestCase):
+    def test_excerpts_capped_with_stickies_first(self):
+        flow = {"nodes": [{"actions": [{"type": "send_msg", "text": f"message {i}"} for i in range(30)]}],
+                "ui": {"stickies": {"s": {"title": "Note", "body": "what this flow is for"}}}}
+        ex = uf._excerpts(flow, "u", set())
+        self.assertLessEqual(len(ex), uf.MAX_EXCERPTS)
+        self.assertEqual(ex[0]["kind"], "sticky")
+
+    def test_output_budget(self):
+        self.assertEqual(uc.MAX_TOKENS, 128000)
+
+
+class MissingGroups(unittest.TestCase):
+    def test_groups_from_routers_and_inactive_triggers(self):
+        names = {g["name"] for g in uf.build_facts(model(project="Demo", scope_all=True))["groups"]}
+        self.assertIn("Staff", names)
+        self.assertIn("Old cohort", names)
+
+
+class BadWebhookUrl(unittest.TestCase):
+    def test_build_facts_survives_bad_url(self):
+        flows, triggers = load()
+        flows[3]["nodes"][1]["actions"][0]["url"] = "https://[bad-host/path"
+        m = md.Model(flows, triggers, md.Settings(scope_all=True, today=date(2026, 11, 13)))
+        uf.build_facts(m)
+
+
+class InteractiveText(unittest.TestCase):
+    def test_scalar_text_does_not_crash(self):
+        for text in ("5", "[1,2]", "null"):
+            uf._interactive_text({"name": "Menu", "text": text})
+
+    def test_list_body_kept(self):
+        out = uf._interactive_text({"name": "Menu", "text": json.dumps({"type": "list", "body": "Pick a topic", "items": []})})
+        self.assertIn("Pick a topic", out)
+
+
+class FactsUseMaskedNames(unittest.TestCase):
+    def test_keywords_and_router_groups_masked(self):
+        flows, triggers = load()
+        w = by_name(flows, "Welcome")
+        w["keywords"] = ["hi", "call9876500111", "9876500112"]
+        w["nodes"][0]["router"]["cases"][0]["arguments"] = ["g9", "Staff 9876500113"]
+        text = json.dumps(uf.build_facts(model(flows, triggers, scope_all=True)), ensure_ascii=False)
+        for seed in ("9876500112", "9876500113"):
+            self.assertNotIn(seed, text, seed)
+
+    def test_facts_reuse_model_staff(self):
+        m = model(scope_all=True)
+        m.staff = {"Welcome"}                 # a staff name the export does not contain
+        f = uf.build_facts(m)
+        self.assertNotIn("Welcome to the Healthy", json.dumps(f))
+
+
+class SettingsFactsTest(unittest.TestCase):
+    def test_facts_setting_start(self):
+        f = uf.build_facts(model(org=SETTINGS, scope_all=True))
+        old = next(x for x in f["flows"] if x["name"] == "Old draft")
+        self.assertEqual([s["kind"] for s in old["starts_from"]], ["setting"])
+        self.assertIn("default flow", old["starts_from"][0]["text"].lower())
 
 
 if __name__ == "__main__":
