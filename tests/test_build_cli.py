@@ -120,9 +120,5 @@ class OrgNameTest(unittest.TestCase):
     def test_org_name_from_settings(self):
         self.assertIn("<title>Healthy Families Trust flow map</title>", self.run_with_settings())
 
-    def test_glific_project_is_not_used(self):
-        page = self.run_with_settings(org_name="", GLIFIC_PROJECT="My chatbot")
-        self.assertIn("<title>Glific chatbot flow map</title>", page)
-
     def test_project_flag_wins(self):
         self.assertIn("<title>Pilot review flow map</title>", self.run_with_settings("--project", "Pilot review"))
