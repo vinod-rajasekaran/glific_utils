@@ -27,6 +27,7 @@ from glific_get_flows import fetch_flows, login, run_dir, save_json
 from glific_get_settings import fetch_settings
 from glific_get_triggers import fetch_triggers
 from model import Model, Settings
+from privacy import mask
 from render_graph import render_page
 from render_programmes import render_programme_page
 from programme_claude import MODEL, PROMPT_PATH, ProgrammeError, run_programmes, validate
@@ -52,7 +53,9 @@ def check_inputs(flows, triggers, paths=()):
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--from-json", metavar="DIR", type=Path, help="folder with flows.json and triggers.json; re-renders the HTML only")
-    p.add_argument("--project", default=os.environ.get("GLIFIC_PROJECT", "Glific chatbot"), help="project name for the page title")
+    p.add_argument("--project", default=None,
+                   help="name for the page titles (default: the organisation's name from Glific, else GLIFIC_PROJECT, "
+                        "else 'Glific chatbot')")
     p.add_argument("--tag", default=os.environ.get("GLIFIC_TAG", ""), help="flow tag to start from, e.g. '2025 Pilot' (default: start from triggers and keywords)")
     p.add_argument("--tz", default=os.environ.get("GLIFIC_TZ", "Asia/Kolkata"), help="display timezone: 'IST, UTC+5:30' or an IANA name")
     p.add_argument("--date", type=date.fromisoformat, default=None,
@@ -80,7 +83,7 @@ def parse_args():
 def main():
     args = parse_args()
     flows, triggers, org, out_dir = load_saved(args.from_json) if args.from_json else fetch_live()
-    graph_model = Model(flows, triggers, settings_from(args), org=org)   # built once: the graph page and the programme page's full graph
+    graph_model = Model(flows, triggers, settings_from(args, org), org=org)   # built once: the graph page and the programme page's full graph
     page, findings = render_page(graph_model, out=sys.stderr)
     print("\nFindings:" if findings else "\nFindings: none", file=sys.stderr)
     for f in findings:
@@ -94,8 +97,13 @@ def main():
     print(path.resolve())  # the only line on stdout, so wrappers can open it
 
 
-def settings_from(args, scope_all=False):
-    return Settings(project=args.project, tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
+def project_name(args, org):
+    """--project if given; otherwise the organisation's name from settings.json; then GLIFIC_PROJECT."""
+    return args.project or mask(str((org or {}).get("name") or "")).strip() or os.environ.get("GLIFIC_PROJECT") or "Glific chatbot"
+
+
+def settings_from(args, org, scope_all=False):
+    return Settings(project=project_name(args, org), tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
                     notes=args.notes.read_text() if args.notes else "", scope_all=scope_all)
 
 
@@ -149,7 +157,7 @@ def programme_step(args, flows, triggers, out_dir, org, graph_model):
 
 
 def _programme_step(args, flows, triggers, out_dir, org, graph_model):
-    st = settings_from(args, scope_all=True)
+    st = settings_from(args, org, scope_all=True)
     m = Model(flows, triggers, st, org=org)
     facts = build_facts(m)
     save_json({"model": MODEL, "system": PROMPT_PATH.read_text(encoding="utf-8"), "facts": facts}, "claude_input.json", out_dir)

@@ -7,7 +7,8 @@
     out-of-office flow outOfOffice.flowId          messages outside working hours (when enabled)
     regex flow         regxFlow.flowId             messages matching a pattern
 
-Only flow IDs and switches are read: no names, emails, phone numbers or keys.
+Only the organisation's name (for the page title), flow IDs and switches are read: no emails,
+phone numbers or keys.
 
 Usage (same env vars as the other scripts):
   python3 glific_get_settings.py      # writes settings.json to this run's folder
@@ -20,6 +21,7 @@ SETTINGS_QUERY = """
 query organization {
   organization {
     organization {
+      name
       newcontactFlowId
       optinFlowId
       outOfOffice { enabled flowId defaultFlowId }

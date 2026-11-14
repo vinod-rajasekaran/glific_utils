@@ -51,7 +51,7 @@ output/org_programme_architecture/2026-11-13_22-31-13/
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--project` | `GLIFIC_PROJECT`, else "Glific chatbot" | Project name for the titles |
+| `--project` | the organisation's name from Glific (`settings.json`), else `GLIFIC_PROJECT`, else "Glific chatbot" | Name for the page titles |
 | `--tag` | `GLIFIC_TAG`, else none | Flow tag the graph starts from. Without it, the graph starts from active triggers and keywords |
 | `--tz` | `GLIFIC_TZ`, else `Asia/Kolkata` | Display time zone: `"IST, UTC+5:30"` or an IANA name. UTC is shown in brackets |
 | `--date` | today, or the date the `--from-json` folder name starts with | Snapshot date (`YYYY-MM-DD`): decides which triggers have ended |
@@ -169,7 +169,7 @@ A JSON array with one object per flow:
 
 ## `glific_get_settings.py`
 
-Reads the organisation settings that start flows without a trigger or keyword, through the `organization` GraphQL query: `outOfOffice.defaultFlowId` (default flow, runs on any message that matches no keyword), `newcontactFlowId`, `optinFlowId`, `outOfOffice.flowId` (only when out-of-office is switched on) and `regxFlow.flowId`. Only flow IDs and switches are read. If the settings cannot be read, it warns and returns `{}`, and those flows show as "No start found".
+Reads the organisation settings that start flows without a trigger or keyword, through the `organization` GraphQL query: `outOfOffice.defaultFlowId` (default flow, runs on any message that matches no keyword), `newcontactFlowId`, `optinFlowId`, `outOfOffice.flowId` (only when out-of-office is switched on) and `regxFlow.flowId`. Only the organisation's name (used for the page title), flow IDs and switches are read. If the settings cannot be read, it warns and returns `{}`, and those flows show as "No start found".
 
 ---
 
