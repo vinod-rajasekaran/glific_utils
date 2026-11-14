@@ -15,12 +15,11 @@ from string import Template
 
 from cards import flow_card
 from graph_svg import graph_svg
-from render_graph import PAGE, _Balance
+from render_graph import BASE_CSS, _Balance
 from sections import context_section, shared_resources, strip_section, tagging_gaps
 from text import esc, fmt_day, join, plural, typo
 from programme_claude import MODEL, wrap_use_case
 
-BASE_CSS = re.search(r"<style>(.*?)</style>", PAGE, re.S).group(1)
 ROLE_LABEL = {"core": "Core", "helper": "Helper", "shared": "Shared", "test": "Test", "leftover": "Leftover", "unknown": "Role unclear"}
 CONF_LABEL = {"clear": "clear", "likely": "likely", "guess": "a guess"}
 

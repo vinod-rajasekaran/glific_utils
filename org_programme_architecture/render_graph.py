@@ -135,6 +135,7 @@ def render_page(m, out=None):
             f"Times are in {m.tz_label}, with UTC in brackets. Select a box in the graph to read what that flow does.")
     footer = " ".join(x for x in [st.footer.strip(), "Generated from flows.json and triggers.json by glific_utils."] if x)
     page = Template(PAGE).substitute(
+        css=BASE_CSS,
         title=esc(f"{st.project} flow map"),
         h1=esc(typo(f"{st.project}: how the flows start and connect")),
         lede=esc(typo(lede)),
@@ -159,6 +160,7 @@ def render_page(m, out=None):
 
 
 PAGE = (ASSETS / "graph_page.html").read_text(encoding="utf-8")
+BASE_CSS = (ASSETS / "base.css").read_text(encoding="utf-8")       # shared with the programme page
 
 
 GRAPH_JS = (ASSETS / "graph.js").read_text(encoding="utf-8")

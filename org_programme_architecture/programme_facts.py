@@ -94,83 +94,119 @@ def _move_text(direction, groups, cond):
 
 def build_facts(m):
     """Facts for every flow in the model's scope (use Settings(scope_all=True) for the whole export)."""
-    staff = staff_names(m.flows)
-    order = sorted(m.scope, key=m.name_key)
-    flows, edges, groups, triggers, hosts = [], [], {}, [], set()
+    return _Facts(m).build()
 
-    def group(name):
-        return groups.setdefault(name, {"id": f"group:{name}", "name": name, "added_by": [], "removed_by": [], "triggers": [], "checked_by": []})
 
-    for t in m.triggers:
-        fl = (t.get("flow") or {}).get("uuid")
-        if fl not in m.scope:
-            continue
-        active = t in m.active_trig.get(fl, [])
-        gs = names(t.get("groups")) + names(t.get("waGroups"))
-        tid = f"trigger:{t.get('id')}"
-        triggers.append({"id": tid, "flow": fl, "schedule": schedule_text(t, m.tz, []), "groups": gs, "active": active})
-        for g in gs:
-            group(g)
-        if active:
-            edges.append({"id": f"edge:{tid}:{fl}:start", "from": tid, "to": fl, "kind": "start"})
+class _Facts:
+    """Builds the facts in one pass: triggers first, then each flow in name order. Groups and
+    edges are collected along the way, keyed by the IDs Claude must cite."""
+
+    def __init__(self, m):
+        self.m = m
+        self.staff = staff_names(m.flows)
+        self.order = sorted(m.scope, key=m.name_key)
+        self.edges, self.groups, self.triggers, self.hosts = [], {}, [], set()
+
+    def group(self, name):
+        return self.groups.setdefault(name, {"id": f"group:{name}", "name": name, "added_by": [], "removed_by": [],
+                                             "triggers": [], "checked_by": []})
+
+    def add_edge(self, eid, frm, to, kind, once=False):
+        if once and any(e["id"] == eid for e in self.edges):
+            return
+        self.edges.append({"id": eid, "from": frm, "to": to, "kind": kind})
+
+    def build(self):
+        m = self.m
+        self.add_triggers()
+        flows = [self.flow(u) for u in self.order]
+        for rec in self.groups.values():
+            rec["added_by"] = sorted(set(rec["added_by"]), key=m.by_name)
+            rec["removed_by"] = sorted(set(rec["removed_by"]), key=m.by_name)
+        findings = [clean_text(x, self.staff, 400) for x in m.findings]
+        findings += [f"{m.name(u)} holds {join(m.sum[u]['lost'], 3)} that no path reaches." for u in self.order if m.sum[u]["lost"]]
+        return {
+            "flows": flows,
+            "groups": sorted(self.groups.values(), key=lambda g: g["name"].lower()),
+            "triggers": self.triggers,
+            "edges": self.edges,
+            "hosts": sorted(h for h in self.hosts if h),
+            "findings": list(dict.fromkeys(findings)),
+        }
+
+    def add_triggers(self):
+        m = self.m
+        for t in m.triggers:
+            fl = (t.get("flow") or {}).get("uuid")
+            if fl not in m.scope:
+                continue
+            active = t in m.active_trig.get(fl, [])
+            gs = names(t.get("groups")) + names(t.get("waGroups"))
+            tid = f"trigger:{t.get('id')}"
+            self.triggers.append({"id": tid, "flow": fl, "schedule": schedule_text(t, m.tz, []), "groups": gs, "active": active})
             for g in gs:
-                group(g)["triggers"].append(tid)
-                edges.append({"id": f"edge:group:{g}:{tid}:schedule", "from": f"group:{g}", "to": tid, "kind": "schedule"})
+                self.group(g)
+            if active:
+                self.add_edge(f"edge:{tid}:{fl}:start", tid, fl, "start")
+                for g in gs:
+                    self.group(g)["triggers"].append(tid)
+                    self.add_edge(f"edge:group:{g}:{tid}:schedule", f"group:{g}", tid, "schedule")
 
-    for u in order:
-        s, f = m.sum[u], m.flows[u]
-        starts_from = []
+    def starts_from(self, u):
+        m, f = self.m, self.m.flows[u]
+        out = []
         for t in m.active_trig.get(u, []):
             gs = join(names(t.get("groups")) + names(t.get("waGroups")), 4) or "no group"
-            starts_from.append({"kind": "trigger", "ref": f"trigger:{t.get('id')}", "text": f"{schedule_text(t, m.tz, [])}, to {gs}"})
+            out.append({"kind": "trigger", "ref": f"trigger:{t.get('id')}", "text": f"{schedule_text(t, m.tz, [])}, to {gs}"})
         for _, text in m.setting_starts.get(u, []):
-            starts_from.append({"kind": "setting", "ref": "", "text": text})
+            out.append({"kind": "setting", "ref": "", "text": text})
         if f.get("keywords"):
-            starts_from.append({"kind": "keyword", "ref": "", "text": "a contact sends " + join(f["keywords"], 20, "or")})
+            out.append({"kind": "keyword", "ref": "", "text": "a contact sends " + join(f["keywords"], 20, "or")})
         for c, n in sorted(m.callers.get(u, {}).items(), key=lambda cn: m.name(cn[0]).lower()):
-            starts_from.append({"kind": "flow", "ref": c, "text": f"{m.name(c)} enters it{times(n)}"})
-        if not starts_from:
-            starts_from.append({"kind": "none", "ref": "", "text": "No trigger, keyword or flow in the export starts it"})
+            out.append({"kind": "flow", "ref": c, "text": f"{m.name(c)} enters it{times(n)}"})
+        return out or [{"kind": "none", "ref": "", "text": "No trigger, keyword or flow in the export starts it"}]
 
-        leads_to = []
+    def leads_to(self, u):
+        m, s = self.m, self.m.sum[u]
+        out = []
         for v, n in sorted(Counter(v for v, _ in s["starts"] if v != u and v in m.flows).items(), key=lambda vn: m.name(vn[0]).lower()):
-            leads_to.append({"kind": "flow", "ref": v, "text": f"enters {m.name(v)}{times(n)}"})
-            edges.append({"id": f"edge:{u}:{v}:start", "from": u, "to": v, "kind": "start"})
+            out.append({"kind": "flow", "ref": v, "text": f"enters {m.name(v)}{times(n)}"})
+            self.add_edge(f"edge:{u}:{v}:start", u, v, "start")
         for w, v, fld in m.data_links:
             if w == u:
-                leads_to.append({"kind": "data", "ref": v, "text": f"sets {fld}, which {m.name(v)} reads"})
-                eid = f"edge:{u}:{v}:data"
-                if not any(e["id"] == eid for e in edges):
-                    edges.append({"id": eid, "from": u, "to": v, "kind": "data"})
+                out.append({"kind": "data", "ref": v, "text": f"sets {fld}, which {m.name(v)} reads"})
+                self.add_edge(f"edge:{u}:{v}:data", u, v, "data", once=True)
         for direction, gs, cond in s["moves"]:
             for g in gs:
                 if g == "all groups":
                     continue
-                rec = group(g)
+                rec = self.group(g)
                 (rec["added_by"] if direction == "into" else rec["removed_by"]).append(u)
-                leads_to.append({"kind": "group", "ref": f"group:{g}", "text": _move_text(direction, (g,), cond)})
+                out.append({"kind": "group", "ref": f"group:{g}", "text": _move_text(direction, (g,), cond)})
                 kind = "adds" if direction == "into" else "removes"
-                eid = f"edge:{u}:group:{g}:{kind}"
-                if not any(e["id"] == eid for e in edges):
-                    edges.append({"id": eid, "from": u, "to": f"group:{g}", "kind": kind})
+                self.add_edge(f"edge:{u}:group:{g}:{kind}", u, f"group:{g}", kind, once=True)
+        return out
 
-        for n in f.get("nodes") or []:
+    def scan_nodes(self, u):
+        """Groups that routers check, and webhook hosts."""
+        for n in self.m.flows[u].get("nodes") or []:
             for case in (n.get("router") or {}).get("cases") or []:
                 if case.get("type") == "has_group" and case.get("arguments"):
-                    rec = group(str(case["arguments"][-1]))
+                    rec = self.group(str(case["arguments"][-1]))
                     if u not in rec["checked_by"]:
                         rec["checked_by"].append(u)
             for a in n.get("actions") or []:
                 if a.get("type") == "call_webhook" and "://" in str(a.get("url") or ""):
                     host = host_of(str(a["url"]).strip())
                     if host != "[link]":
-                        hosts.add(host)
+                        self.hosts.add(host)
 
-        route = []
-        if s["waits"]:
-            route.append(f"waits for a reply at {s['waits']} points")
-        route += [f"branches on {r}" for r in s["routes"]]
-        flows.append({
+    def flow(self, u):
+        m, s, f = self.m, self.m.sum[u], self.m.flows[u]
+        starts_from, leads_to = self.starts_from(u), self.leads_to(u)
+        self.scan_nodes(u)
+        route = ([f"waits for a reply at {s['waits']} points"] if s["waits"] else []) + [f"branches on {r}" for r in s["routes"]]
+        return {
             "id": u,
             "name": m.name(u),
             "tag": m.tag_label(u),
@@ -181,21 +217,5 @@ def build_facts(m):
             "routes": route,
             "unreachable": list(s["lost"]),
             "earlier_triggers": len(m.earlier_trig.get(u, [])),
-            "excerpts": _excerpts(f, u, staff),
-        })
-
-    for rec in groups.values():
-        rec["added_by"] = sorted(set(rec["added_by"]), key=m.by_name)
-        rec["removed_by"] = sorted(set(rec["removed_by"]), key=m.by_name)
-    findings = [clean_text(x, staff, 400) for x in m.findings]
-    for u in order:
-        if m.sum[u]["lost"]:
-            findings.append(f"{m.name(u)} holds {join(m.sum[u]['lost'], 3)} that no path reaches.")
-    return {
-        "flows": flows,
-        "groups": sorted(groups.values(), key=lambda g: g["name"].lower()),
-        "triggers": triggers,
-        "edges": edges,
-        "hosts": sorted(h for h in hosts if h),
-        "findings": list(dict.fromkeys(findings)),
-    }
+            "excerpts": _excerpts(f, u, self.staff),
+        }
