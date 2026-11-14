@@ -60,12 +60,21 @@ class Model:
         self.graphs = {u: FlowGraph(f) for u, f in self.flows.items()}
         self.sum = {u: mask_summary(summarise(g), self.staff) for u, g in self.graphs.items()}
         self.findings = []
-        self.triggers = triggers
+        self.triggers = [self._masked_trigger(t) for t in triggers]
         self._triggers()
         self._scope()
         self._links()
         self._roles()
         self._graph_map()
+
+    def _masked_trigger(self, t):
+        """A copy of a trigger whose group names are masked like the group names in flows (with
+        the staff list too), so a schedule's group still matches the group a flow fills."""
+        t = dict(t)
+        for key in ("groups", "waGroups"):
+            if t.get(key):
+                t[key] = [mask(g, self.staff) for g in names(t[key])]
+        return t
 
     def name(self, u):
         return self._names[u] if u in self._names else mask(u, self.staff)

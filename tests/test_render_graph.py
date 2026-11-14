@@ -2,8 +2,9 @@
 import unittest
 from datetime import date
 
-from tests.helpers import ROOT, load  # also puts org_programme_architecture on sys.path
+from tests.helpers import ROOT, load, model  # also puts org_programme_architecture on sys.path
 import model as md  # noqa: E402
+import render_graph as ra  # noqa: E402
 import sections as sec  # noqa: E402
 
 
@@ -37,3 +38,16 @@ class SharedTableTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RenderPageLeavesModel(unittest.TestCase):
+    def test_render_page_does_not_change_findings(self):
+        flows, triggers = load()
+        flows[0]["nodes"][0]["actions"].append({"type": "enter_flow", "uuid": "x1", "flow": {"uuid": "gone", "name": "Ghost flow"}})
+        m = model(flows, triggers, scope_all=True)      # render_page adds a finding about the missing flow
+        before = list(m.findings)
+        _, first = ra.render_page(m)
+        _, second = ra.render_page(m)
+        self.assertTrue(any("Ghost flow" in f for f in first))
+        self.assertEqual(m.findings, before)
+        self.assertEqual(first, second)

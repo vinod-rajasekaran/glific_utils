@@ -3,7 +3,7 @@ import json
 import unicodedata
 import unittest
 
-from tests.helpers import TODAY, SEEDS, model, hostile  # also puts org_programme_architecture on sys.path
+from tests.helpers import TODAY, SEEDS, by_name, hostile, load, model  # also puts org_programme_architecture on sys.path
 import flow_reading as fr  # noqa: E402
 import model as md  # noqa: E402
 import privacy as pv  # noqa: E402
@@ -128,3 +128,33 @@ class OverMasking(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MaskingRegressions(unittest.TestCase):
+    """Masking must not get weaker while keeping hostnames and number ranges readable."""
+
+    def test_phone_before_a_full_stop(self):
+        for text in ("call me on 9876543210.Thanks", "98765-43210.ok", "9876543210.pdf"):
+            self.assertNotIn("43210", pv.mask(text), text)
+
+    def test_phone_with_spaced_dash_or_double_space(self):
+        for text in ("98765 - 43210", "98765  43210"):
+            self.assertNotIn("43210", pv.mask(text), text)
+
+    def test_hyphenated_and_dotted_tokens(self):
+        for token in ("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6-x9y8", "ya29.a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8"):
+            self.assertNotIn("a1b2c3d4e5f6a7b8", pv.mask(f"token {token}"), token)
+
+    def test_hosts_and_ranges_still_kept(self):
+        host = "volunteer-digital-onboarding-238853749053.europe-west1.run.app"
+        self.assertEqual(pv.mask(f"calls {host} now"), f"calls {host} now")
+        self.assertEqual(pv.mask("weight 1 - 2500 or 2501 - 4000"), "weight 1 - 2500 or 2501 - 4000")
+
+    def test_group_names_masked_with_staff_names(self):
+        flows, triggers = load()
+        by_name(flows, "Survey save")["nodes"][1]["actions"][0]["contacts"].append({"uuid": "c-2", "name": "Priya Sharma"})
+        by_name(flows, "Profile")["nodes"][2]["actions"][0]["groups"] = [{"uuid": "g1", "name": "Priya Sharma follow-ups"}]
+        triggers[-1]["groups"] = ["Priya Sharma follow-ups"]
+        m = model(flows, triggers, scope_all=True)
+        self.assertNotIn("Priya", json.dumps(uf.build_facts(m)))
+        self.assertTrue(any(info["triggers"] and info["adds"] for info in m.view.group_nodes.values()))   # still joined up

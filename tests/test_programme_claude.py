@@ -312,3 +312,13 @@ class EvidenceTypes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NumericIds(unittest.TestCase):
+    def test_numeric_use_case_ids_in_parts(self):
+        r = programmes_raw()
+        r["use_cases"][0]["id"], r["use_cases"][1]["id"] = 1, 2
+        r["programmes"][0]["parts"] = [1, 2]
+        v, problems = uc.validate(r, facts())
+        first = next(p for p in v["programmes"] if p["name"] == "Healthy families programme")
+        self.assertEqual(len(first["parts"]), 2)

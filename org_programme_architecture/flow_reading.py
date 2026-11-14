@@ -202,7 +202,8 @@ def mask_summary(s, staff):
     group-move conditions and the names of flows a flow starts."""
     for key in TEXT_KEYS:
         s[key] = [mask(x, staff) for x in s[key]]
-    # group names were masked by names() as they were read, the same way as everywhere else
-    s["moves"] = [(d, gs, tuple(mask(c, staff) for c in cond) if cond else cond) for d, gs, cond in s["moves"]]
+    # group names with the staff list too, as the model does for the groups triggers send to
+    s["moves"] = [(d, tuple(mask(g, staff) for g in gs), tuple(mask(c, staff) for c in cond) if cond else cond)
+                  for d, gs, cond in s["moves"]]
     s["starts"] = [(v, mask(name, staff)) for v, name in s["starts"]]
     return s

@@ -21,8 +21,14 @@ class GraphView:
     group_nodes: dict = field(default_factory=dict)      # group name -> {"adds", "removes", "triggers"}
     entry: list = field(default_factory=list)            # flows with a start box that no flow on the graph starts
     linked_group: set = field(default_factory=set)       # flows added because they fill a group a schedule sends to
+    _edges: list = field(default=None, repr=False)       # computed once, on first use
 
     def edges(self, m):
+        if self._edges is None:
+            self._edges = self._compute_edges(m)
+        return self._edges
+
+    def _compute_edges(self, m):
         out = []
         for u in self.trigger_flows:
             out.append([f"t-{u}" if m.active_trig.get(u) else f"k-{u}", f"f-{u}", "s"])
@@ -51,7 +57,7 @@ class GraphView:
         return out
 
 
-def build_view(m, flow_ids, add_fillers=False, no_starts=frozenset(), ignore_callers=frozenset(), cap=30):
+def build_view(m, flow_ids, add_fillers=False, no_starts=frozenset(), ignore_callers=frozenset(), *, cap):
     """Put exactly these flows on the graph and work out their trigger, keyword, no-start and
     group boxes. With add_fillers, flows outside the set that add contacts to a group a
     schedule on the graph sends to are added too. Flows in no_starts (faded neighbours) get

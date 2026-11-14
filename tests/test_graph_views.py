@@ -164,3 +164,21 @@ class StartColumnTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ViewConsistency(unittest.TestCase):
+    def test_card_describes_the_graph_it_is_drawn_in(self):
+        import cards
+        m = model(scope_all=True)
+        tip = uid(m, "Weekly tip")
+        rows = cards.flow_rows(m, tip, m.graph_view({tip}))      # Profile, which sets stage, is not on this graph
+        self.assertIn("Reads stage set by Profile", rows)
+
+    def test_edges_computed_once_per_view(self):
+        m = model(scope_all=True)
+        self.assertIs(m.view.edges(m), m.view.edges(m))
+
+    def test_build_view_needs_the_cap(self):
+        import inspect
+        import graph_view
+        self.assertIs(inspect.signature(graph_view.build_view).parameters["cap"].default, inspect.Parameter.empty)

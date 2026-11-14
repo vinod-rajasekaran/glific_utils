@@ -106,7 +106,7 @@ def render_html(flows, triggers, settings=None, out=None, org=None):
 def render_page(m, out=None):
     """Return (html, findings) for a model. Prints intermediate tables to `out` when given."""
     st = m.st
-    findings = m.findings
+    findings = list(m.findings)   # a copy: the model is shared with the programme page
     edges = m.view.edges(m)
 
     edges_js = json.dumps(edges).replace("</", "<\\/")

@@ -51,7 +51,7 @@ def graph_svg(m, view, findings, ns="", faded=frozenset(), part_of=None):
         w, h = sizes[n]
         u = n[2:]
         if n.startswith("f-"):
-            cls, txt, card, label = _flow_box(m, u, x, y, h)
+            cls, txt, card, label = _flow_box(m, u, x, y, h, view)
             if u in faded:
                 cls += " faded"
         else:
@@ -165,7 +165,7 @@ def _edge_text(m, a, b, k, groups, fields):
 
 # --------------------------------------------------------------------------- boxes
 
-def _flow_box(m, u, x, y, h):
+def _flow_box(m, u, x, y, h, view):
     """(class, svg text, card, aria label) for a flow box: its name, its tag if it lacks the
     focus tag, and one line on what it does."""
     outside = bool(m.st.tag) and not m.tagged(u)
@@ -180,7 +180,7 @@ def _flow_box(m, u, x, y, h):
     chips = node_chips(m, u)
     spans = '<tspan class="sep"> \u00b7 </tspan>'.join(f'<tspan class="{c}">{esc(t)}</tspan>' for t, c in chips)
     txt += f'<text class="nmeta" x="{x + 12:.1f}" y="{y + h - 11:.1f}">{spans}</text>'
-    return cls, txt, flow_card(m, u), m.name(u)
+    return cls, txt, flow_card(m, u, view), m.name(u)
 
 
 def _note_card(title, rows_html, dashed=True, pill=""):

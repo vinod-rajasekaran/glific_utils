@@ -7,7 +7,6 @@ statement opens to the evidence it cites. Every number, link, schedule and group
 the model and the facts, not from Claude.
 """
 import json
-import re
 from pathlib import Path
 from collections import Counter
 from datetime import datetime
@@ -168,7 +167,7 @@ def neighbours(cx, members):
     return out
 
 
-def flow_pane(cx, fid, findings):
+def flow_pane(cx, fid, findings, view=None):
     f, c = cx.flow[fid], cx.claude_flow.get(fid, {})
     head = (f'<div class="fp-head"><h3>{t(f["name"])}</h3><span class="role claude r-{esc(c.get("role", "unknown"))}" '
             f'title="Claude\u2019s reading">'
@@ -204,7 +203,7 @@ def flow_pane(cx, fid, findings):
             rows.append(f"<li>{t(s['text'])}{link}</li>")
         return f'<h4>{esc(heading)}</h4><ul class="io">{"".join(rows)}</ul>' if rows else ""
 
-    card = re.sub(r' data-id="[^"]*"', "", flow_card(cx.m, fid))
+    card = flow_card(cx.m, fid, view)
     return (head + purpose + where + io(f["starts_from"], "How it starts") + io(f["leads_to"], "Where it leads")
             + card)
 
@@ -251,7 +250,7 @@ def programme_view(cx, prog, findings, tag):
     view = m.graph_view(set(members) | near, no_starts=near, ignore_callers=tests)
     svg, tpls = graph_svg(m, view, findings, ns=f"{pid}-", faded=near, part_of=part_of)
     test_note = test_readers_note(cx, set(members), tests)
-    panes = "".join(f'<template id="pane-{esc(pid)}-f-{esc(fid)}">{flow_pane(cx, fid, findings)}</template>'
+    panes = "".join(f'<template id="pane-{esc(pid)}-f-{esc(fid)}">{flow_pane(cx, fid, findings, view)}</template>'
                     for fid in sorted(view.on_map, key=m.by_name) if fid in cx.flow)
     sections = ""
     if len(parts) > 1:
@@ -278,7 +277,7 @@ def programme_view(cx, prog, findings, tag):
         if len(parts) > 1:
             cards += f'<h4 class="cardgroup">{part_chip(part_no[u["id"]], u["name"])}</h4>'
         cards += '<div class="fcards">' + "".join(
-            f'<div class="fcard" id="card-{esc(pid)}-{esc(fid)}">{flow_pane(cx, fid, findings)}</div>' for fid in u["flows"]) + "</div>"
+            f'<div class="fcard" id="card-{esc(pid)}-{esc(fid)}">{flow_pane(cx, fid, findings, view)}</div>' for fid in u["flows"]) + "</div>"
     whole = programme_whole(prog, parts)
     return (f'<section class="ucview" id="uc-{esc(pid)}" hidden>'
             f'<p><a class="back" href="#">\u2190 All programmes</a></p>'

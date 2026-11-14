@@ -11,7 +11,9 @@ def row(label, text, cls=""):
     return f'<div class="r"><span class="k {cls}">{esc(label)}</span><span>{esc(typo(cap_words(text)))}</span></div>'
 
 
-def flow_rows(m, u):
+def flow_rows(m, u, view=None):
+    """The rows of a flow's card, as seen from the graph it is drawn in (the model's main view by default)."""
+    on_map = (view or m.view).on_map
     s, f = m.sum[u], m.flows[u]
     calls = join([f"{c}{times(n)}" for c, n in Counter(s["calls"]).items()], 4)
     sends = []
@@ -41,7 +43,7 @@ def flow_rows(m, u):
         if w == u:
             by_reader[v].append(fld)
     feeds = [f"{m.name(v)} reads {join(fs, 4)}" for v, fs in by_reader.items()]
-    reads = [f"reads {fld} set by {m.name(w)}" for w, v, fld in m.data_links if v == u and w not in m.view.on_map]
+    reads = [f"reads {fld} set by {m.name(w)}" for w, v, fld in m.data_links if v == u and w not in on_map]
     notes = []
     if not f.get("nodes"):
         notes.append("No definition was exported for this flow")
@@ -54,7 +56,7 @@ def flow_rows(m, u):
     if reads:
         notes.append(sentence(join(reads, 2)))
     trig = ""
-    if m.active_trig.get(u) and u not in m.view.on_map:
+    if m.active_trig.get(u) and u not in on_map:
         trig = "Active: " + "; ".join(schedule_text(t, m.tz, m.findings) for t in m.active_trig[u])
     elif u not in m.active_trig and m.earlier_trig.get(u):
         trig = "None active. " + earlier_runs(m.earlier_trig[u], m.tz)
@@ -95,10 +97,10 @@ def tag_pill(m, u):
     return '<span class="tag no">No tag</span>'
 
 
-def flow_card(m, u):
+def flow_card(m, u, view=None):
     cls = "card" if m.tagged(u) else "card untagged"
     return (f'<article class="{cls}"><div class="ch"><h3>{esc(m.name(u))}</h3>{tag_pill(m, u)}</div>'
-            f'{flow_rows(m, u)}</article>')
+            f'{flow_rows(m, u, view)}</article>')
 
 
 def trigger_card(m, u, findings):

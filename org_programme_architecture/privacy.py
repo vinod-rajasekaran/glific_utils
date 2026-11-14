@@ -19,17 +19,21 @@ BARE_LINK = re.compile(r"\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}/[^\s\"'<>)]*")      
 # 8 or more digits with at most one separator between them (space, dot, dash, or a closing bracket
 # and a space), so "+91 98765 43210" and "(022) 2345 6789" match but a range like "2501 - 4000" does not
 PHONE = re.compile(r"\+?\(?\d(?:(?:[\s.\-]|\)\s?)?\d){7,}")
+# Ten or more digits with looser gaps ("98765 - 43210", "98765  43210"); short ranges such as
+# "2501 - 4000" have fewer digits and stay readable
+PHONE_LOOSE = re.compile(r"\+?\(?\d(?:(?:\s{0,2}[-.]\s{0,2}|\s{1,2}|\)\s?)?\d){9,}")
 ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
-HOSTNAME = re.compile(r"\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b")
+# A hostname's first label starts with a letter, so "9876543210.Thanks" is not taken for one
+HOSTNAME = re.compile(r"\b[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b")
 SECRET = re.compile(
     r"(?<=Bearer )\S+"                                      # bearer tokens
     r"|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"   # JWTs
     r"|\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]+"              # Stripe-style keys
     r"|\bxox[abprs]-[A-Za-z0-9-]+"                          # Slack tokens
-    r"|\bAIza[0-9A-Za-z_-]{20,}"                           # Google API keys
-    r"|(?<![\w.-])(?=[A-Za-z0-9_]*\d)(?=[A-Za-z0-9_]*[A-Za-z])[A-Za-z0-9_]{32,}(?![\w.-])")
-# The long-token rule leaves out hyphens and dots, so hostnames such as
-# volunteer-digital-onboarding-123456789012.europe-west1.run.app are not taken for keys
+    r"|\bAIza[0-9A-Za-z_-]{20,}")                          # Google API keys
+# Long mixed letters-and-digits runs (hyphens and underscores allowed); applied after hostnames
+# are set aside, so a Cloud Run host is not taken for a key
+LONG_TOKEN = re.compile(r"\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{32,}\b")
 VIRAMA_ETC = {"\u094d", "\u09cd", "\u0a4d", "\u0acd", "\u0b4d", "\u0bcd", "\u0c4d", "\u0ccd", "\u0d4d", "\u200c", "\u200d"}
 
 
@@ -56,21 +60,16 @@ def _cut(text, limit):
 
 
 def mask(text, staff=()):
-    """Personal data and secrets out of one piece of text; nothing is cut."""
+    """Personal data and secrets out of one piece of text; nothing is cut.
+
+    Order matters: known secret shapes first; links to their host; emails; then dates and
+    hostnames are set aside while long tokens, staff names and phone numbers are masked in
+    the rest, and put back at the end."""
     out = str(text or "")
-    out = SECRET.sub("[secret]", out)                         # before links, so tokens in paths go too
+    out = SECRET.sub("[secret]", out)
     out = URL.sub(lambda mm: host_of(mm.group(0)), out)         # before emails, so user:pw@host links go whole
     out = BARE_LINK.sub(lambda mm: host_of(mm.group(0)), out)
     out = EMAIL.sub("[email]", out)
-    names = set()
-    for n in staff:
-        if n and len(n) > 2:
-            names.add(n)
-            names.update(p for p in re.split(r"[\s.]+", n) if len(p) > 2)
-    for name in sorted(names, key=len, reverse=True):
-        out = _name_pattern(name).sub("a staff contact", out)
-    # Dates and hostnames (a Cloud Run host carries a long project number) are kept out of the
-    # phone rule, then put back
     kept = []
 
     def keep(mm):
@@ -78,6 +77,15 @@ def mask(text, staff=()):
         return f"\x00{len(kept) - 1}\x00"
     out = ISO_DATE.sub(keep, out)
     out = HOSTNAME.sub(keep, out)
+    out = LONG_TOKEN.sub("[secret]", out)
+    names = set()
+    for n in staff:
+        if n and len(n) > 2:
+            names.add(n)
+            names.update(p for p in re.split(r"[\s.]+", n) if len(p) > 2)
+    for name in sorted(names, key=len, reverse=True):
+        out = _name_pattern(name).sub("a staff contact", out)
+    out = PHONE_LOOSE.sub("[number]", out)
     out = PHONE.sub("[number]", out)
     return re.sub(r"\x00(\d+)\x00", lambda mm: kept[int(mm.group(1))], out)
 

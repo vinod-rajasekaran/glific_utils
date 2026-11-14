@@ -153,6 +153,11 @@ def _ids(value):
     return [x for x in value if isinstance(x, str)] if isinstance(value, list) else []
 
 
+def _keys(value):
+    """IDs that may come back as numbers (use-case IDs), as strings; anything else is dropped."""
+    return [str(x) for x in value if isinstance(x, (str, int)) and not isinstance(x, bool)] if isinstance(value, list) else []
+
+
 def _items(value):
     """The dicts in a list from Claude's answer, skipping anything else."""
     return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
@@ -288,8 +293,8 @@ class _Checker:
         for p in _items(out["programmes"]):
             name = str(p.get("name") or "Unnamed programme")
             parts = []
-            for pid in _ids(p.get("parts")):
-                pid = slug_of.get(str(pid), pid)
+            for pid in _keys(p.get("parts")):
+                pid = slug_of.get(pid, pid)
                 if pid not in by_id:
                     self.problems.append(f"programme {name}: unknown use case ID {pid}")
                 elif pid in owner:

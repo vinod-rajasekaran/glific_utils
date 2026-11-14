@@ -192,7 +192,7 @@ class _Facts:
         for n in self.m.flows[u].get("nodes") or []:
             for case in (n.get("router") or {}).get("cases") or []:
                 if case.get("type") == "has_group" and case.get("arguments"):
-                    rec = self.group(mask(str(case["arguments"][-1])))   # masked like every group name
+                    rec = self.group(mask(str(case["arguments"][-1]), self.staff))   # masked like every group name
                     if u not in rec["checked_by"]:
                         rec["checked_by"].append(u)
             for a in n.get("actions") or []:
