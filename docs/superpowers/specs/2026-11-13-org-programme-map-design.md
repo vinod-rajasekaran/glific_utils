@@ -1,6 +1,8 @@
-# Use-case flow map: design
+# Org programme map: design (began as the use-case flow map)
 
-Date: 2026-11-13. Status: awaiting approval.
+> **Updated 2026-11-14.** File, flag and output names in this document follow the code as built. What changed after it was written, in short: use cases are grouped into **programmes**, each made of parts; the export also reads Glific's organisation **settings** (`settings.json`), so flows started as the default, new-contact or opt-in flow are shown as such; each run writes **one page**, `org_map.html` (the programme page with `--programmes`, the flow graph without it; the full graph is one view of the programme page); the column and lane layouts were removed; masking moved to `privacy.py` and is applied once as the model is built; and `render_graph.py` was split into small modules (see the feature README for the current file list). `PROMPT_SPEC.md` was removed. Read the feature README for current behaviour.
+
+Date: 2026-11-13. Status: approved 2026-11-13; built on the usecase-flow-map branch.
 
 ## Intent
 
@@ -11,7 +13,7 @@ Glific orgs accumulate dozens of flows. Someone reviewing an implementation, or 
 3. how each flow starts (another flow, a keyword message, a scheduled Glific trigger, a group a contact was put in, or nothing visible) and where it leads;
 4. what it touches outside the bot: webhooks, Google Sheets, contact fields, and the groups (collections) it adds contacts to or removes them from.
 
-Today `flow_map.sh` builds a graph page from the flows and triggers exports. It answers (3) and (4) mechanically but cannot answer (1) and (2), and it starts from a tag, so it misses whole use cases. This work adds Claude to read the flows, work out the org's use cases and each flow's purpose, and produce a page organised by use case.
+Today `org_map.sh` builds a graph page from the flows and triggers exports. It answers (3) and (4) mechanically but cannot answer (1) and (2), and it starts from a tag, so it misses whole use cases. This work adds Claude to read the flows, work out the org's use cases and each flow's purpose, and produce a page organised by use case.
 
 Readers: a reviewer checking an org's implementation, and a person taking over an org with nobody to ask. Success: a newcomer can explain each use case after ten minutes on the page, and a reviewer can spot problems (unreachable steps, test flows reading live fields, untagged flows that matter, flows with no visible start) without opening Glific.
 
@@ -20,7 +22,7 @@ Readers: a reviewer checking an org's implementation, and a person taking over a
 - One HTML page per run that opens on a list of the org's use cases and drills into each one.
 - Claude does the interpretation: grouping flows into use cases, naming them, each flow's purpose and role, the story of each use case, what each hand-over means, and what to watch.
 - Python does the facts: parsing, links, schedules, counts, groups, layout, rendering and validation.
-- Runs inside `flow_map.sh` with an `ANTHROPIC_API_KEY`.
+- Runs inside `org_map.sh` with an `ANTHROPIC_API_KEY`.
 
 ## Non-goals
 
@@ -37,26 +39,26 @@ Readers: a reviewer checking an org's implementation, and a person taking over a
 ## Constraints
 
 - Python 3 standard library only, as the repo is today (it calls Glific with `urllib`). Calling the Anthropic API with `urllib` keeps that; adding the `anthropic` SDK is the builder's call if it buys structured-output support that is hard to get otherwise.
-- Without an API key, or if the Claude step fails, `flow_map.sh` must still produce today's graph page (`--layout graph`), with a note that the use-case view was skipped and why.
-- Page rules from `PROMPT_SPEC.md` still apply (fonts, light and dark themes, plain words, no em dashes, privacy rules, the checks before finishing).
+- Without an API key, or if the Claude step fails, `org_map.sh` must still produce today's graph page (`--layout graph`), with a note that the use-case view was skipped and why.
+- Page rules from the page rules in the feature README still apply (fonts, light and dark themes, plain words, no em dashes, privacy rules, the checks before finishing).
 - Same input must give a comparable page: fixed model, fixed parameters, and a saved Claude response that can be re-rendered without calling the API again.
 
 ## Decided with the user
 
-- Claude is part of `flow_map.sh`, called with an API key.
+- Claude is part of `org_map.sh`, called with an API key.
 - Claude returns structured data, not HTML. Python validates it and renders the page. (Proposed by me, accepted by the user.)
 - Short message excerpts are sent to the API, with personal data stripped.
 - First screen: a list of use cases, each with a short summary and pills (number of flows and other tags).
 - Selecting a use case opens a page with the graph and a **side pane** (layout B in the mockups): the graph stays in view on the left; the right pane shows the use case's story and explanation until a box is selected, then that flow's full details and ins and outs.
 - Flow detail stays as rich as today's cards ("all the intricacies of each flow").
-- Message excerpts may appear on the page as evidence: they are text the bot sends programmatically, not personal data. This relaxes the `PROMPT_SPEC.md` rule "never full bodies" for evidence only; the cleaning rules under Privacy still apply. Sends rows on flow cards keep describing purpose and template names.
+- Message excerpts may appear on the page as evidence: they are text the bot sends programmatically, not personal data. This relaxes the the page rules in the feature README rule "never full bodies" for evidence only; the cleaning rules under Privacy still apply. Sends rows on flow cards keep describing purpose and template names.
 - Active flows only for now (as `glific_get_flows.py` fetches today). "Leftover" means an active flow that nothing reaches or that Claude reads as unused. Inactive flows are a possible later option.
 
 ## How it works
 
 ```
 flows.json + triggers.json
-   │  Python: parse (render_architecture.Model and summarise, as today)
+   │  Python: parse (render_graph.Model and summarise, as today)
    ▼
 facts.json            every flow, trigger, group, link, with stable IDs
    │  Python: build the Claude payload (excerpts, stickies, PII stripped)
@@ -122,7 +124,7 @@ A flow has one primary use case or none. Flows used by several use cases (such a
 
 My call: the latest Claude model (Opus 5.5, `claude-opus-5-5`) in one call per run, with fixed parameters. The builder should read the `claude-api` skill before writing the call (structured output, token limits, prompt caching of the instructions). For this org the facts are roughly 44 flows and 153 messages, well within one call. For large orgs the builder should set a budget and trim excerpts per flow (keep stickies, then the first messages) before splitting the call; splitting is out of scope unless the budget is hit in practice.
 
-The prompt lives in the repo as a file (for example `get_system_flow_architecture/USECASE_PROMPT.md`) so it can be reviewed and versioned, and states: the readers, the task, the output schema, the evidence and confidence rules, "say you cannot tell", and the privacy rules.
+The prompt lives in the repo as a file (for example `org_programme_architecture/PROGRAMME_PROMPT.md`) so it can be reviewed and versioned, and states: the readers, the task, the output schema, the evidence and confidence rules, "say you cannot tell", and the privacy rules.
 
 ## The page
 
@@ -144,11 +146,11 @@ Narrow screens follow today's rules: the graph scrolls sideways inside its box a
 
 ## Current state to build on
 
-Uncommitted work in this repo already provides the graph mode: `graph_layout.py` (layered layout with waypoints, fixed layers and soft edges), and in `render_architecture.py` the `graph` layout with trigger, keyword, no-start and group boxes, one-step-back scope, the slide-in panel and tag lines. `--layout columns|lanes|graph|all` exists. Commit that work first.
+Uncommitted work in this repo already provides the graph mode: `graph_layout.py` (layered layout with waypoints, fixed layers and soft edges), and in `render_graph.py` the `graph` layout with trigger, keyword, no-start and group boxes, one-step-back scope, the slide-in panel and tag lines. `--layout columns|lanes|graph|all` exists. Commit that work first.
 
 ## Running it (my calls)
 
-- The Claude step runs only when asked, with a flag (for example `--usecases`) or `GLIFIC_USECASES=1` in `.env`, and needs `ANTHROPIC_API_KEY`. A key sitting in `.env` alone never sends org data.
+- The Claude step runs only when asked, with a flag (for example `--programmes`) or `GLIFIC_PROGRAMMES=1` in `.env`, and needs `ANTHROPIC_API_KEY`. A key sitting in `.env` alone never sends org data.
 - The default layout becomes `graph`. With the Claude step on, a run writes the use-case page and the graph page, and opens the use-case page.
 - `--tag` is optional: with the Claude step it only adds a tag pill and filter; for the graph page it keeps its current meaning.
 - Tests use a small synthetic fixture (made-up flows, triggers and a matching `claude_output.json`) committed under `tests/`. The real org's data never goes into git; rendering this org is checked locally only.
