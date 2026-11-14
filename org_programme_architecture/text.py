@@ -3,7 +3,7 @@ import html
 import re
 from datetime import datetime, timedelta, timezone
 
-from privacy import mask
+from glific_common.privacy import mask
 
 try:
     from zoneinfo import ZoneInfo

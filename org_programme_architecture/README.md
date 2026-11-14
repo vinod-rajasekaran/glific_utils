@@ -13,7 +13,6 @@ Either way the full flow graph is one more view on the page: how every flow star
 | [`glific_get_flows.py`](glific_get_flows.py) | Every **active** flow, with its full definition (credentials and sticky-note tokens blanked) | `flows.json` |
 | [`glific_get_triggers.py`](glific_get_triggers.py) | Every **trigger**, active and inactive | `triggers.json` |
 | [`glific_get_settings.py`](glific_get_settings.py) | The **organisation settings** that start flows: default, new contact, opt-in, out-of-office and regex flows | `settings.json` |
-| [`privacy.py`](privacy.py) | Masking of phone numbers, emails, links, secrets and staff names, used everywhere | |
 | [`flow_reading.py`](flow_reading.py) | Reads one flow: reachable nodes and a summary of what it calls, sends, sets, moves and logs | |
 | [`model.py`](model.py) | The model of an export: scope, starts, callers, data links and the graph's flows | |
 | [`graph_view.py`](graph_view.py) | The boxes and edges for a set of flows (a `GraphView`); never changes the model | |
@@ -28,6 +27,8 @@ Either way the full flow graph is one more view on the page: how every flow star
 | [`assets/`](assets/) | Page markup, styles and scripts, inlined into the page at build time | |
 
 Nothing is tied to a particular org: every active flow in the account is read.
+
+The Glific client (login, GraphQL paging, `.env`), run folders, credential redaction and the masking of personal data are shared with the other features and live in [`glific_common/`](../glific_common/): `api.py`, `flows.py`, `output.py`, `redact.py` and `privacy.py`.
 
 ## Usage
 
@@ -70,7 +71,15 @@ journey Intervention areas, fed by CommCare: f:Home visit | f:Collect phone and 
 Campaign messages are built by hand in Google Sheets.
 ```
 
-Keep all the scripts in this folder: they import from each other. Tests: `python3 -m unittest discover -s tests` from the repo root. There is one test file per module, with shared helpers in `tests/helpers.py`; they use a made-up org in `tests/fixtures`, and `GLIFIC_OUTPUT_ROOT` and `GLIFIC_NO_DOTENV` keep them away from your `output/` and `.env`. `tests/test_snapshots.py` checks the pages byte for byte; after an intended change to the page, regenerate them with `UPDATE_SNAPSHOTS=1`.
+Keep all the scripts in this folder: they import from each other.
+
+### Tests
+
+From the repo root: `python3 -m unittest discover -s tests -t .` (all features) or `python3 -m unittest discover -s tests/org_programme_architecture -t .` (this one). The tests live in [`tests/org_programme_architecture/`](../tests/org_programme_architecture/), grouped by module (for example `test_privacy.py`, `test_grouping.py`, `test_render_org_map.py`), with shared helpers in `helpers.py`. They use a made-up org in `fixtures/` (rebuilt by `fixtures/make_fixture.py`) and a stand-in for the Anthropic client, so they make no network calls; `GLIFIC_OUTPUT_ROOT` and `GLIFIC_NO_DOTENV` keep them away from your `output/` and `.env`. `test_snapshots.py` checks the pages byte for byte against `snapshots/`; after an intended change to the page, regenerate them with `UPDATE_SNAPSHOTS=1 python3 -m unittest tests.org_programme_architecture.test_snapshots` and review the diff before committing.
+
+### Design history
+
+The design and the build plan are in [`docs/superpowers/`](../docs/superpowers/) (`2026-11-13-org-programme-map*`). They record why it was built this way; this README is the reference for how it works now.
 
 ---
 
@@ -80,7 +89,7 @@ By default, Claude reads every active flow and works out what the bot does, in t
 
 **What Claude decides, and what it does not.** Claude groups flows into parts and parts into programmes, names them, gives each flow a purpose and role (core, helper, shared, test, leftover) and writes the stories and concerns. Every number, schedule, group, link and arrow comes from the export. Claude may refer to flows, groups, triggers, links and message excerpts only by the IDs in the facts, and must cite them as evidence with a confidence level (clear, likely, a guess). Python checks every reference: anything that does not match is removed, Claude gets one chance to fix its answer, and whatever is still wrong is listed under "Dropped by validation". Selecting a confidence badge shows the evidence. Claude's text is always labelled "Claude's reading".
 
-**What is sent to the API.** For each flow: its name, tag, keywords, how it starts (including Glific settings), what it leads to, what it touches (webhook hosts, sheets, fields, groups, labels, tickets, staff alerts by template) and up to 25 excerpts of its messages, interactive messages, template names and designers' sticky notes, sticky notes first. Excerpts are cut to 200 characters. Masking is done once, in `privacy.py`, as the model is built, so it covers the page and the facts alike: phone numbers, emails and things shaped like keys or tokens are masked, links (with or without `http`) are cut to their host, and staff contact names from alerts and tickets become "a staff contact". This applies to flow, group, label and sheet names, router branches, ticket topics and keywords as well as to message excerpts. People named in message text who are not alert or ticket staff are not recognised as names. The exporter also blanks webhook credentials and tokens in sticky notes before anything is saved. The exact request is saved as `claude_input.json` before it is sent.
+**What is sent to the API.** For each flow: its name, tag, keywords, how it starts (including Glific settings), what it leads to, what it touches (webhook hosts, sheets, fields, groups, labels, tickets, staff alerts by template) and up to 25 excerpts of its messages, interactive messages, template names and designers' sticky notes, sticky notes first. Excerpts are cut to 200 characters. Masking is done once, in `glific_common/privacy.py`, as the model is built, so it covers the page and the facts alike: phone numbers, emails and things shaped like keys or tokens are masked, links (with or without `http`) are cut to their host, and staff contact names from alerts and tickets become "a staff contact". This applies to flow, group, label and sheet names, router branches, ticket topics and keywords as well as to message excerpts. People named in message text who are not alert or ticket staff are not recognised as names. The exporter also blanks webhook credentials and tokens in sticky notes before anything is saved. The exact request is saved as `claude_input.json` before it is sent.
 
 **Requirements and cost.** The `anthropic` package (in `.venv`, see the [main README](../README.md)), and an Anthropic API key in `ANTHROPIC_API_KEY` (or in `.env`). The step uses `claude-opus-5-5` in one call (two if a repair is needed); for an org with about 45 flows the input is roughly 30,000 tokens, the call takes about five minutes and costs under a dollar. Without the package or a key, or if Claude's answer is unusable, the run prints why and builds the page without Claude.
 
@@ -134,10 +143,10 @@ The page never shows header values, tokens, full URLs, message bodies, phone num
 
 ### How it works
 
-1. Logs in at `POST /api/v1/session` and gets an access token.
+1. Logs in at `POST /api/v1/session` and gets an access token (through `glific_common/api.py`).
 2. Pages through the `flows` GraphQL query (100 per page) with the filter `isActive: true`.
 3. Prints a count of active flows per tag to stderr, so you can see what was pulled.
-4. Calls `exportFlow` for each flow to get its full definition. The export also contains any sub-flows the flow calls, so the script keeps only the definition whose UUID matches the flow.
+4. Calls `exportFlow` for each flow to get its full definition (`glific_common/flows.py`, which blanks credentials with `glific_common/redact.py`). The export also contains any sub-flows the flow calls, so the script keeps only the definition whose UUID matches the flow.
 5. Builds an edge list from each node's exits.
 
 ### Output
@@ -182,7 +191,7 @@ Reads the organisation settings that start flows without a trigger or keyword, t
 
 ### How it works
 
-1. Reuses `login()`, `post()`, `save_json()` and `PAGE_SIZE` from `glific_get_flows.py`.
+1. Logs in and pages through the query with `glific_common/api.py`, and saves through `glific_get_flows.save_json`.
 2. Pages through the `triggers` GraphQL query with no filter, so it returns both active and inactive triggers.
 3. Adds a readable `schedule` string to each trigger.
 4. Prints one line per trigger to stderr: status, name, the flow it starts, its schedule and its groups.

@@ -15,7 +15,8 @@ Usage (same env vars as the other scripts):
 """
 import sys
 
-from glific_get_flows import login, post as glific_post, save_json
+from glific_get_flows import login, save_json
+from glific_common.api import post as glific_post
 
 SETTINGS_QUERY = """
 query organization {

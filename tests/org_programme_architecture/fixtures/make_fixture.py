@@ -2,7 +2,7 @@
 """Write the synthetic flows.json and triggers.json used by the tests.
 
 Everything here is made up: no real org's flows, people or numbers.
-Run from the repo root:  python3 tests/fixtures/make_fixture.py
+Run from the repo root:  python3 tests/org_programme_architecture/fixtures/make_fixture.py
 """
 import json
 from pathlib import Path

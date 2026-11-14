@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.helpers import ROOT, FIX, SETTINGS  # also puts org_programme_architecture on sys.path
-import privacy as pv  # noqa: E402
+from tests.org_programme_architecture.helpers import ROOT, FIX, SETTINGS  # also puts org_programme_architecture on sys.path
+from glific_common import privacy as pv  # noqa: E402
 
 
 BUILD = ROOT / "org_programme_architecture" / "build_org_map.py"

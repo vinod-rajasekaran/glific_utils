@@ -1,7 +1,7 @@
 """Grouping flows by their links, for runs without Claude, and the page built from those groups."""
 import unittest
 
-from tests.helpers import SEEDS, by_name, groups_page, hostile, load, model, uid  # also puts org_programme_architecture on sys.path
+from tests.org_programme_architecture.helpers import SEEDS, by_name, groups_page, hostile, load, model, uid  # also puts org_programme_architecture on sys.path
 from grouping import NOT_CONNECTED, group_answer, group_flows  # noqa: E402
 
 

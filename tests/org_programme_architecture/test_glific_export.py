@@ -5,10 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.helpers import ROOT, SETTINGS  # also puts org_programme_architecture on sys.path
+from tests.org_programme_architecture.helpers import ROOT, SETTINGS  # also puts org_programme_architecture on sys.path
 import glific_get_flows as gf  # noqa: E402
+from glific_common import api, redact  # noqa: E402
 import glific_get_settings as gs  # noqa: E402
-import privacy as pv  # noqa: E402
+from glific_common import privacy as pv  # noqa: E402
 
 
 class EmptyEnvValues(unittest.TestCase):
@@ -19,7 +20,7 @@ class EmptyEnvValues(unittest.TestCase):
         os.environ.pop("ZZ_TEST_SET", None)
         saved = os.environ.pop("GLIFIC_NO_DOTENV", None)
         try:
-            gf.load_env(path)
+            api.load_env(path)
         finally:
             if saved is not None:
                 os.environ["GLIFIC_NO_DOTENV"] = saved
@@ -33,7 +34,7 @@ class EmptyEnvValues(unittest.TestCase):
 class StickySecrets(unittest.TestCase):
     def test_exporter_scrubs_ui(self):
         definition = {"nodes": [], "_ui": {"stickies": {"s": {"body": "Bearer SECRETBEARER123"}}}}
-        gf.redact_definition(definition)
+        redact.redact_definition(definition)
         self.assertNotIn("SECRETBEARER123", json.dumps(definition))
 
     def test_clean_text_masks_tokens(self):

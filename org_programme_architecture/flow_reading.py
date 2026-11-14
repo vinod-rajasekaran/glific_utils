@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 from urllib.parse import urlsplit
 
-from privacy import host_of, mask
+from glific_common.privacy import host_of, mask
 from text import join, names, plural
 
 

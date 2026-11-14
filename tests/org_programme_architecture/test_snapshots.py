@@ -1,11 +1,11 @@
 """Byte-for-byte snapshots of the pages for the made-up org, so refactoring cannot change output
-unnoticed. After an intended change, regenerate with:  UPDATE_SNAPSHOTS=1 python3 -m unittest tests.test_snapshots
+unnoticed. After an intended change, regenerate with:  UPDATE_SNAPSHOTS=1 python3 -m unittest tests.org_programme_architecture.test_snapshots
 """
 import json
 import os
 import unittest
 
-from tests.helpers import ROOT, TODAY, hostile, load  # also puts org_programme_architecture on sys.path
+from tests.org_programme_architecture.helpers import HERE, TODAY, hostile, load  # also puts org_programme_architecture on sys.path
 
 import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
@@ -13,8 +13,8 @@ import programme_facts as uf  # noqa: E402
 import render_org_map as ru  # noqa: E402
 from grouping import group_answer  # noqa: E402
 
-FIX = ROOT / "tests" / "fixtures"
-SNAP = ROOT / "tests" / "snapshots"
+FIX = HERE / "fixtures"
+SNAP = HERE / "snapshots"
 ORG = {"newcontactFlowId": "001", "outOfOffice": {"defaultFlowId": "008"}}
 NO_CLAUDE = "it was run with --no-claude"
 

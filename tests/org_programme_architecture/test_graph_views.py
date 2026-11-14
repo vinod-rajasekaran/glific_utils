@@ -5,7 +5,7 @@ import sys
 import unittest
 from datetime import date
 
-from tests.helpers import ROOT, U, SETTINGS, load, model, uid, by_name, groups_page  # also puts org_programme_architecture on sys.path
+from tests.org_programme_architecture.helpers import ROOT, U, SETTINGS, load, model, uid, by_name, groups_page  # also puts org_programme_architecture on sys.path
 import graph_svg as gsvg  # noqa: E402
 import model as md  # noqa: E402
 
@@ -40,7 +40,7 @@ class GraphSubsetTest(unittest.TestCase):
 
     def test_render_is_deterministic(self):
         import subprocess
-        code = "from tests.helpers import groups_page; print(groups_page())"
+        code = "from tests.org_programme_architecture.helpers import groups_page; print(groups_page())"
         outs = {subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True,
                                env={"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"}).stdout for seed in ("1", "2", "3")}
         self.assertEqual(len(outs), 1)
