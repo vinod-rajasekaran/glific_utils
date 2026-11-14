@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 
 from cards import node_chips
-from text import esc, join, plural, typo
+from glific_common.org_facts.text import esc, join, plural, typo
 
 
 def _used_by(m, us, limit=5):

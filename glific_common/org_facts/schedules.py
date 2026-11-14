@@ -2,7 +2,7 @@
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from text import fmt_day, join, names, parse_utc, plural
+from .text import fmt_day, join, names, parse_utc, plural
 
 
 WEEKDAYS = {1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday"}

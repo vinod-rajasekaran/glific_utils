@@ -35,11 +35,11 @@ from glific_common.privacy import mask  # noqa: E402
 from glific_get_flows import fetch_flows, login, run_dir, save_json  # noqa: E402
 from glific_get_settings import fetch_settings
 from glific_get_triggers import fetch_triggers
-from model import Model, Settings
-from grouping import group_answer
+from glific_common.org_facts.model import Model, Settings
+from glific_common.org_facts.grouping import group_answer
 from render_org_map import render_org_map
 from programme_claude import MODEL, PROMPT_PATH, ProgrammeError, run_programmes, validate
-from programme_facts import build_facts
+from glific_common.org_facts.facts import build_facts
 
 HTML_NAME = "org_map.html"
 

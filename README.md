@@ -9,7 +9,7 @@ Python tools for understanding, auditing and working with a [Glific](https://gli
 | [`org_programme_architecture/`](org_programme_architecture/) | Pulls every active flow, trigger and the organisation's flow settings, and builds one page, `org_map.html`: the bot's programmes (read by Claude, or grouped by their links with `--no-claude`), a graph of how each programme's flows start and connect, and the full flow graph | `./org_map.sh` |
 | [`glific_mcp/`](glific_mcp/) | An MCP server that lets Claude (or any MCP client) read the account's flows with full definitions, collections, templates, tags, languages and settings; write tools only when switched on. **Moved here from [`glific-mcp`](https://github.com/vinod-rajasekaran/glific-mcp)** and rewritten in Python | `./glific_mcp.sh` |
 
-Shared code (the Glific client, run folders, credential redaction and masking of personal data) lives in [`glific_common/`](glific_common/).
+Shared code (the Glific client, run folders, credential redaction, masking of personal data, and `org_facts/`, which reads an export into cleaned facts) lives in [`glific_common/`](glific_common/).
 
 Each feature's README covers what it does, its options, its output and its privacy rules.
 

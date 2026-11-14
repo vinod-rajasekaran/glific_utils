@@ -4,9 +4,9 @@ import unittest
 from datetime import date
 
 from tests.org_programme_architecture.helpers import SETTINGS, load, model, facts, by_name  # also puts org_programme_architecture on sys.path
-import model as md  # noqa: E402
+from glific_common.org_facts import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
-import programme_facts as uf  # noqa: E402
+from glific_common.org_facts import facts as uf  # noqa: E402
 
 
 class FactsTest(unittest.TestCase):

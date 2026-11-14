@@ -9,9 +9,9 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "org_programme_architecture"))
 
-import model as md  # noqa: E402
+from glific_common.org_facts import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
-import programme_facts as uf  # noqa: E402
+from glific_common.org_facts import facts as uf  # noqa: E402
 import render_org_map as ru  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
@@ -70,7 +70,7 @@ def render_demo():
 
 def groups_page(flows=None, triggers=None, org=None, reason="it was run with --no-claude", **kw):
     """The page built without Claude, for the made-up org (or the given flows and triggers)."""
-    from grouping import group_answer
+    from glific_common.org_facts.grouping import group_answer
     m = model(flows, triggers, org=org, **kw)
     return ru.render_org_map(m, uf.build_facts(m), group_answer(m, reason))
 

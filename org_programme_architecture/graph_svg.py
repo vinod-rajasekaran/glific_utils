@@ -4,8 +4,8 @@ from collections import defaultdict
 
 from cards import flow_card, keyword_card, node_chips, row, trigger_card
 from graph_layout import layout as graph_layout
-from schedules import schedule_text
-from text import esc, join, names, plural, typo, wrap
+from glific_common.org_facts.schedules import schedule_text
+from glific_common.org_facts.text import esc, join, names, plural, typo, wrap
 
 
 NODE_W, NODE_H, TRIG_W, TRIG_H, GROUP_W, GROUP_H = 200, 70, 200, 52, 170, 52

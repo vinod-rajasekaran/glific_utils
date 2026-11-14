@@ -13,22 +13,29 @@ Either way the full flow graph is one more view on the page: how every flow star
 | [`glific_get_flows.py`](glific_get_flows.py) | Every **active** flow, with its full definition (credentials and sticky-note tokens blanked) | `flows.json` |
 | [`glific_get_triggers.py`](glific_get_triggers.py) | Every **trigger**, active and inactive | `triggers.json` |
 | [`glific_get_settings.py`](glific_get_settings.py) | The **organisation settings** that start flows: default, new contact, opt-in, out-of-office and regex flows | `settings.json` |
-| [`flow_reading.py`](flow_reading.py) | Reads one flow: reachable nodes and a summary of what it calls, sends, sets, moves and logs | |
-| [`model.py`](model.py) | The model of an export: scope, starts, callers, data links and the graph's flows | |
-| [`graph_view.py`](graph_view.py) | The boxes and edges for a set of flows (a `GraphView`); never changes the model | |
 | [`graph_layout.py`](graph_layout.py) | Layered left-to-right graph layout (no dependencies) | |
 | [`graph_svg.py`](graph_svg.py) | Draws a `GraphView` as SVG, one small function per kind of box | |
-| [`cards.py`](cards.py), [`sections.py`](sections.py), [`schedules.py`](schedules.py), [`text.py`](text.py) | Flow and trigger cards; the tables under a graph; schedules in plain words; text helpers | |
-| [`programme_facts.py`](programme_facts.py) | Cleaned facts about every flow, with IDs, for Claude | `claude_input.json` |
+| [`cards.py`](cards.py), [`sections.py`](sections.py) | Flow and trigger cards; the tables under a graph | |
 | [`programme_claude.py`](programme_claude.py) | One Claude call ([prompt](PROGRAMME_PROMPT.md)), then checks every reference against the facts | `claude_output.json` |
-| [`grouping.py`](grouping.py) | Groups flows by their links, in the shape of Claude's answer, for runs without Claude | |
 | [`render_org_map.py`](render_org_map.py) | The page: programme cards, a view per programme, and the full graph as one more view | `org_map.html` |
 | [`page_check.py`](page_check.py) | Checks the finished page: tags balance, no em dashes | |
 | [`assets/`](assets/) | Page markup, styles and scripts, inlined into the page at build time | |
 
 Nothing is tied to a particular org: every active flow in the account is read.
 
-The Glific client (login, GraphQL paging, `.env`), run folders, credential redaction and the masking of personal data are shared with the other features and live in [`glific_common/`](../glific_common/): `api.py`, `flows.py`, `output.py`, `redact.py` and `privacy.py`.
+Shared with the other features, in [`glific_common/`](../glific_common/):
+
+- `api.py`, `flows.py`, `output.py`, `redact.py`, `privacy.py`: the Glific client (login, GraphQL paging, `.env`), flow export, run folders, credential redaction and the masking of personal data.
+- [`org_facts/`](../glific_common/org_facts/): reading an export, which the MCP server also uses.
+
+| `glific_common/org_facts/` | What it does | Output |
+|---|---|---|
+| `flow_reading.py` | Reads one flow: reachable nodes and a summary of what it calls, sends, sets, moves and logs | |
+| `model.py` | The model of an export: scope, starts, callers, data links and the graph's flows | |
+| `graph_view.py` | The boxes and edges for a set of flows (a `GraphView`); never changes the model | |
+| `facts.py` | Cleaned facts about every flow, with IDs, for Claude | `claude_input.json` |
+| `grouping.py` | Groups flows by their links, in the shape of Claude's answer, for runs without Claude | |
+| `schedules.py`, `text.py` | Schedules in plain words; text helpers | |
 
 ## Usage
 
@@ -95,7 +102,7 @@ By default, Claude reads every active flow and works out what the bot does, in t
 
 ## Without Claude
 
-With `--no-claude`, or when Claude cannot be used, nothing is sent to Anthropic and `grouping.py` groups the flows from the export alone. Flows belong together when one starts the other, when one hands data to the other through a contact field, or when one adds contacts to a group that a schedule starting the other sends to. A flow that starts nothing and is started from two or more places (a shared helper) joins the group holding most of its callers, so it does not glue unrelated groups together. A flow linked to nothing joins the one group whose main tag it carries (the tag of at least half its flows); the rest are listed together as "Not connected". A group is named after its main tag, else "Starts at" its entry flow. The page keeps the same layout, with a banner saying why Claude was not used; there are no summaries, stories or roles, since only Claude writes those.
+With `--no-claude`, or when Claude cannot be used, nothing is sent to Anthropic and `glific_common/org_facts/grouping.py` groups the flows from the export alone. Flows belong together when one starts the other, when one hands data to the other through a contact field, or when one adds contacts to a group that a schedule starting the other sends to. A flow that starts nothing and is started from two or more places (a shared helper) joins the group holding most of its callers, so it does not glue unrelated groups together. A flow linked to nothing joins the one group whose main tag it carries (the tag of at least half its flows); the rest are listed together as "Not connected". A group is named after its main tag, else "Starts at" its entry flow. The page keeps the same layout, with a banner saying why Claude was not used; there are no summaries, stories or roles, since only Claude writes those.
 
 ---
 

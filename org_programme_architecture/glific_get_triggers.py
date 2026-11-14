@@ -10,7 +10,7 @@ import sys
 
 from glific_get_flows import login, save_json
 from glific_common.api import GlificError, paged
-from schedules import WEEKDAYS as FULL_WEEKDAYS
+from glific_common.org_facts.schedules import WEEKDAYS as FULL_WEEKDAYS
 
 TRIGGERS_QUERY = """
 query triggers($filter: TriggerFilter, $opts: Opts) {

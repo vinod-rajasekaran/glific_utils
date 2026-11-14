@@ -3,10 +3,10 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 
-from flow_reading import FlowGraph, mask_summary, summarise
-from graph_view import build_view
+from .flow_reading import FlowGraph, mask_summary, summarise
+from .graph_view import build_view
 from glific_common.privacy import mask, staff_names
-from text import fmt_day, join, names, parse_tz, parse_utc, plural
+from .text import fmt_day, join, names, parse_tz, parse_utc, plural
 
 
 GRAPH_CAP = 30        # flow boxes on the graph layout

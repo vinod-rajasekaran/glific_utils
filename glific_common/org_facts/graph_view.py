@@ -9,7 +9,7 @@ o- started by a flow off this graph, g- contact group.
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from text import names
+from .text import names
 
 @dataclass
 class GraphView:
