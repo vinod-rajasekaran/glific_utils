@@ -11,7 +11,7 @@ Python tools for understanding, auditing and working with a [Glific](https://gli
 
 Shared code (the Glific client, run folders, credential redaction, masking of personal data, and `org_facts/`, which reads an export into cleaned facts) lives in [`glific_common/`](glific_common/).
 
-Each feature's README covers what it does, its options, its output and its privacy rules.
+Each feature's README covers what it does, its options, its output and its privacy rules. Big decisions, and why they were made, are in [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 ## Setup
 
@@ -83,7 +83,8 @@ New use cases are added as features alongside the existing one. Keep to these co
 6. **Privacy by default.** Redact credentials before saving anything, mask personal data before anything is rendered or sent to an outside API, and make any call to an outside API (such as Claude) visible in the run's output and avoidable with a flag.
 7. **Tests** in `tests/<feature folder>/` (with an `__init__.py`), using made-up fixtures in that folder, never real org data, and no network calls.
 8. **Update this README**: add a row to the Features table, and anything the feature changes in Setup, Security or Output.
-9. **Design notes** (optional) go in `docs/superpowers/specs/` and `docs/superpowers/plans/`, named `YYYY-MM-DD-<feature>-design.md` and `YYYY-MM-DD-<feature>.md`. They record why a feature was built the way it was; the feature README stays the reference for how it works now.
+9. **Big decisions** go in [`docs/DECISIONS.md`](docs/DECISIONS.md): what was decided, why, and what was turned down. Only the ones that shape the repo or would be costly to reverse.
+10. **Design notes** (optional) go in `docs/superpowers/specs/` and `docs/superpowers/plans/`, named `YYYY-MM-DD-<feature>-design.md` and `YYYY-MM-DD-<feature>.md`. They record why a feature was built the way it was; the feature README stays the reference for how it works now.
 
 ## License
 
