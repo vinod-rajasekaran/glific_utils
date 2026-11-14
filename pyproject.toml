@@ -1,0 +1,20 @@
+[project]
+name = "glific-utils"
+version = "0.2.0"
+description = "Tools for understanding, auditing and working with a Glific chatbot through its API"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"   # the MCP SDK needs 3.10; developed and tested on 3.15
+dependencies = []            # the org map runs on the standard library alone
+
+[project.optional-dependencies]
+claude = ["anthropic>=2.8"]  # org map: Claude's reading of the flows
+mcp = ["mcp>=2.3,<3"]        # glific_mcp: the MCP server (SDK v2 API)
+dev = ["pyflakes"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["glific_common"]  # features are run as scripts from their folders; only shared code is installed

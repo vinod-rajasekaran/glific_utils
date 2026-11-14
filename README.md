@@ -12,7 +12,16 @@ Each feature's README covers what it does, its options, its output and its priva
 
 ## Setup
 
-The scripts need Python 3.9+ and its standard library. They log in with a Glific staff account, read from a `.env` file at the repo root:
+Python 3.10 or later (developed and tested on 3.15). Create a virtual environment at the repo root and install the optional packages; the run scripts use `.venv` automatically when it exists:
+
+```bash
+python3.15 -m venv .venv
+.venv/bin/pip install -e ".[claude,mcp]"   # anthropic for the org map's Claude step, mcp for the MCP server
+```
+
+The org map itself needs only the standard library, so `python3 org_programme_architecture/build_org_map.py --no-claude` also runs without the venv. `pyproject.toml` lists the packages; `pip install -e .` also makes the shared `glific_common` package importable.
+
+The tools log in with a Glific staff account, read from a `.env` file at the repo root:
 
 ```bash
 cp .env.example .env    # then fill in GLIFIC_URL, GLIFIC_PHONE and GLIFIC_PASSWORD
@@ -26,13 +35,7 @@ export GLIFIC_PHONE=91XXXXXXXXXX                    # login phone number, with c
 export GLIFIC_PASSWORD=secret
 ```
 
-**Optional: Claude.** Features that ask Claude to interpret what they pulled need the `anthropic` package and an Anthropic API key (`ANTHROPIC_API_KEY` in `.env`). Install the package into a virtual environment at the repo root; the run scripts use `.venv` automatically when it exists:
-
-```bash
-python3 -m venv .venv && .venv/bin/pip install anthropic
-```
-
-Without the package or a key, every feature still runs and says what it did instead.
+**Claude.** The org map asks Claude to read the flows when the `anthropic` package and an Anthropic API key (`ANTHROPIC_API_KEY` in `.env`) are present. Without them it still runs and groups flows by their links instead.
 
 ## Quick start
 
