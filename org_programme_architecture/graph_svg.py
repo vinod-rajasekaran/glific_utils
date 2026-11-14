@@ -86,7 +86,7 @@ def _sizes(m, view, edges):
             return TRIG_W, TRIG_H
         if n[0] == "g":
             return GROUP_W, GROUP_H
-        return NODE_W, NODE_H + (0 if m.tagged(n[2:]) else 16)   # room for the tag line
+        return NODE_W, NODE_H + 16   # room for the tag line
     sizes = {}
     for a, b, _ in edges:
         sizes[a], sizes[b] = size(a), size(b)
@@ -166,17 +166,15 @@ def _edge_text(m, a, b, k, groups, fields):
 # --------------------------------------------------------------------------- boxes
 
 def _flow_box(m, u, x, y, h, view):
-    """(class, svg text, card, aria label) for a flow box: its name, its tag if it lacks the
-    focus tag, and one line on what it does."""
-    outside = bool(m.st.tag) and not m.tagged(u)
-    cls = "node flow" + (" untagged" if outside else "")
+    """(class, svg text, card, aria label) for a flow box: its name, its tag, and one line on
+    what it does."""
+    cls = "node flow"
     lines = wrap(m.name(u), 24)
     ty = y + (24 if len(lines) == 2 else 30)
     txt = "".join(f'<text class="nname" x="{x + 12:.1f}" y="{ty + i * 17:.1f}">{esc(t)}</text>' for i, t in enumerate(lines))
-    if not m.tagged(u):   # say which tag it has instead, since this is where tags get missed
-        tl = m.tag_label(u)
-        tag_line = f"Tag: {tl}" if tl else "No tag"
-        txt += f'<text class="ntag{"" if outside else " plain"}" x="{x + 12:.1f}" y="{y + h - 29:.1f}">{esc(wrap(tag_line, 30, 1)[0])}</text>'
+    tl = m.tag_label(u)
+    tag_line = f"Tag: {tl}" if tl else "No tag"
+    txt += f'<text class="ntag plain" x="{x + 12:.1f}" y="{y + h - 29:.1f}">{esc(wrap(tag_line, 30, 1)[0])}</text>'
     chips = node_chips(m, u)
     spans = '<tspan class="sep"> \u00b7 </tspan>'.join(f'<tspan class="{c}">{esc(t)}</tspan>' for t, c in chips)
     txt += f'<text class="nmeta" x="{x + 12:.1f}" y="{y + h - 11:.1f}">{spans}</text>'

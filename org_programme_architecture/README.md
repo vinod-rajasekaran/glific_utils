@@ -2,8 +2,10 @@
 
 Pulls every active flow, every trigger and the organisation's flow settings from a Glific instance, and builds one page, `org_map.html`:
 
-- **The flow graph**: how every flow starts (schedule, keyword, another flow, a Glific setting or a contact group) and what it leads to. Built entirely in Python; no API key needed.
-- **With `--programmes`, the programme page**: Claude reads the flows and explains what the bot does, as a few programmes made of parts, with a graph and a story for each. The full flow graph is one more view on the same page. Every number, link and arrow still comes from the export.
+- **Programmes from Claude** (the default when the `anthropic` package and an API key are present): Claude reads the flows and explains what the bot does, as a few programmes made of parts, with a graph and a story for each.
+- **Groups by links, without Claude** (`--no-claude`, no key, or Claude's answer unusable): Python groups flows that start each other, hand over data or fill a group a schedule sends to. The page has the same layout, with a "Built without Claude" banner saying why, and no summaries or roles.
+
+Either way the full flow graph is one more view on the page: how every flow starts (schedule, keyword, another flow, a Glific setting or a contact group) and what it leads to. Every number, link and arrow comes from the export. Tags do not decide what is mapped; each flow shows its tag, and each card counts the tags of its flows.
 
 | File | What it does | Output |
 |---|---|---|
@@ -18,21 +20,22 @@ Pulls every active flow, every trigger and the organisation's flow settings from
 | [`graph_layout.py`](graph_layout.py) | Layered left-to-right graph layout (no dependencies) | |
 | [`graph_svg.py`](graph_svg.py) | Draws a `GraphView` as SVG, one small function per kind of box | |
 | [`cards.py`](cards.py), [`sections.py`](sections.py), [`schedules.py`](schedules.py), [`text.py`](text.py) | Flow and trigger cards; the tables under a graph; schedules in plain words; text helpers | |
-| [`render_graph.py`](render_graph.py) | The flow graph page | `org_map.html` |
 | [`programme_facts.py`](programme_facts.py) | Cleaned facts about every flow, with IDs, for Claude | `claude_input.json` |
 | [`programme_claude.py`](programme_claude.py) | One Claude call ([prompt](PROGRAMME_PROMPT.md)), then checks every reference against the facts | `claude_output.json` |
-| [`render_programmes.py`](render_programmes.py) | The programme page, with the full graph as one view | `org_map.html` |
+| [`grouping.py`](grouping.py) | Groups flows by their links, in the shape of Claude's answer, for runs without Claude | |
+| [`render_org_map.py`](render_org_map.py) | The page: programme cards, a view per programme, and the full graph as one more view | `org_map.html` |
+| [`page_check.py`](page_check.py) | Checks the finished page: tags balance, no em dashes | |
 | [`assets/`](assets/) | Page markup, styles and scripts, inlined into the page at build time | |
 
-Nothing is tied to a particular org: the tag to focus the graph on is the `--tag` input, and the programme page reads every active flow.
+Nothing is tied to a particular org: every active flow in the account is read.
 
 ## Usage
 
 Set the variables in the [main README](../README.md#setup), then from the repo root:
 
 ```bash
-./org_map.sh --project "My Bot" --tag "2025 Pilot"                 # the flow graph
-./org_map.sh --project "My Bot" --tag "2025 Pilot" --programmes    # the programme page, graph included
+./org_map.sh                # programmes from Claude
+./org_map.sh --no-claude    # groups by links; nothing is sent to Anthropic
 ```
 
 Each run writes to a new folder named by the local date and time:
@@ -42,8 +45,8 @@ output/org_programme_architecture/2026-11-13_22-31-13/
 ├── flows.json
 ├── triggers.json
 ├── settings.json
-├── claude_input.json       # with --programmes: exactly what was sent to Claude
-├── claude_output.json      # with --programmes: Claude's answer (reuse it with --reuse-claude)
+├── claude_input.json       # unless --no-claude: exactly what was sent to Claude
+├── claude_output.json      # Claude's answer, when there is one (reuse it with --reuse-claude)
 └── org_map.html            # open in a browser
 ```
 
@@ -52,14 +55,13 @@ output/org_programme_architecture/2026-11-13_22-31-13/
 | Option | Default | Meaning |
 |---|---|---|
 | `--project` | the organisation's name from Glific (`settings.json`), else "Glific chatbot" | Name for the page titles |
-| `--tag` | `GLIFIC_TAG`, else none | Flow tag the graph starts from. Without it, the graph starts from active triggers and keywords |
 | `--tz` | `GLIFIC_TZ`, else `Asia/Kolkata` | Display time zone: `"IST, UTC+5:30"` or an IANA name. UTC is shown in brackets |
 | `--date` | today, or the date the `--from-json` folder name starts with | Snapshot date (`YYYY-MM-DD`): decides which triggers have ended |
-| `--programmes` | `GLIFIC_PROGRAMMES=1`, else off | Make the page the programme page, from Claude's reading. See [Programme page](#programme-page) |
-| `--reuse-claude DIR` | | Use Claude's saved answer in `DIR/claude_output.json` instead of calling the API (implies `--programmes`) |
+| `--no-claude` | off | Group flows by their links instead of asking Claude. See [Without Claude](#without-claude) |
+| `--reuse-claude DIR` | | Use Claude's saved answer in `DIR/claude_output.json` instead of calling the API |
 | `--from-json DIR` | | Rebuild from `flows.json`, `triggers.json` and, if present, `settings.json` saved earlier, with no Glific calls |
 | `--footer` | none | One sentence for the footer |
-| `--notes FILE` | none | Context notes for the flow graph page (format below) |
+| `--notes FILE` | none | Context notes shown with the full flow graph (format below) |
 
 **Context notes file.** A line starting with `journey` becomes a strip of small boxes. `f:` marks field people (amber), `d:` data systems (grey) and `c:` chatbot messages (green). Every other line becomes a paragraph in a "Content and data" card.
 
@@ -72,15 +74,19 @@ Keep all the scripts in this folder: they import from each other. Tests: `python
 
 ---
 
-## Programme page
+## Programmes from Claude
 
-With `--programmes`, Claude reads every active flow and works out what the bot does, in two levels: a few programmes (for example a maternal and child health pilot), each made of parts (registration, data sync, weekly nudges, question answering). The page opens on one card per programme, plus a card for the full flow graph, with its parts and pills (number of flows, how they start, outside systems, groups, concerns). Selecting one shows a graph of all its flows, each box striped in the colour of its part, beside a side pane with the programme's story end to end and a section per part. Selecting a box shows that flow's purpose, how it starts, where it leads and its full card. Flows from other programmes that connect to this one appear faded; selecting one jumps to its programme.
+By default, Claude reads every active flow and works out what the bot does, in two levels: a few programmes (for example a maternal and child health pilot), each made of parts (registration, data sync, weekly nudges, question answering). The page opens on one card per programme, plus a card for the full flow graph, with its parts and pills (number of flows, how they start, outside systems, groups, concerns). Selecting one shows a graph of all its flows, each box striped in the colour of its part, beside a side pane with the programme's story end to end and a section per part. Selecting a box shows that flow's purpose, how it starts, where it leads and its full card. Flows from other programmes that connect to this one appear faded; selecting one jumps to its programme.
 
 **What Claude decides, and what it does not.** Claude groups flows into parts and parts into programmes, names them, gives each flow a purpose and role (core, helper, shared, test, leftover) and writes the stories and concerns. Every number, schedule, group, link and arrow comes from the export. Claude may refer to flows, groups, triggers, links and message excerpts only by the IDs in the facts, and must cite them as evidence with a confidence level (clear, likely, a guess). Python checks every reference: anything that does not match is removed, Claude gets one chance to fix its answer, and whatever is still wrong is listed under "Dropped by validation". Selecting a confidence badge shows the evidence. Claude's text is always labelled "Claude's reading".
 
 **What is sent to the API.** For each flow: its name, tag, keywords, how it starts (including Glific settings), what it leads to, what it touches (webhook hosts, sheets, fields, groups, labels, tickets, staff alerts by template) and up to 25 excerpts of its messages, interactive messages, template names and designers' sticky notes, sticky notes first. Excerpts are cut to 200 characters. Masking is done once, in `privacy.py`, as the model is built, so it covers the page and the facts alike: phone numbers, emails and things shaped like keys or tokens are masked, links (with or without `http`) are cut to their host, and staff contact names from alerts and tickets become "a staff contact". This applies to flow, group, label and sheet names, router branches, ticket topics and keywords as well as to message excerpts. People named in message text who are not alert or ticket staff are not recognised as names. The exporter also blanks webhook credentials and tokens in sticky notes before anything is saved. The exact request is saved as `claude_input.json` before it is sent.
 
-**Requirements and cost.** The `anthropic` package (in `.venv`, see the [main README](../README.md)), and an Anthropic API key in `ANTHROPIC_API_KEY` (or in `.env`). The step uses `claude-opus-5-5` in one call (two if a repair is needed); for an org with about 45 flows the input is roughly 30,000 tokens, the call takes about five minutes and costs under a dollar. Without the package or a key, or if Claude's answer is unusable, the run prints why and writes the flow graph page instead.
+**Requirements and cost.** The `anthropic` package (in `.venv`, see the [main README](../README.md)), and an Anthropic API key in `ANTHROPIC_API_KEY` (or in `.env`). The step uses `claude-opus-5-5` in one call (two if a repair is needed); for an org with about 45 flows the input is roughly 30,000 tokens, the call takes about five minutes and costs under a dollar. Without the package or a key, or if Claude's answer is unusable, the run prints why and builds the page without Claude.
+
+## Without Claude
+
+With `--no-claude`, or when Claude cannot be used, nothing is sent to Anthropic and `grouping.py` groups the flows from the export alone. Flows belong together when one starts the other, when one hands data to the other through a contact field, or when one adds contacts to a group that a schedule starting the other sends to. A flow that starts nothing and is started from two or more places (a shared helper) joins the group holding most of its callers, so it does not glue unrelated groups together. A flow linked to nothing joins the one group whose main tag it carries (the tag of at least half its flows); the rest are listed together as "Not connected". A group is named after its main tag, else "Starts at" its entry flow. The page keeps the same layout, with a banner saying why Claude was not used; there are no summaries, stories or roles, since only Claude writes those.
 
 ---
 
@@ -88,7 +94,7 @@ With `--programmes`, Claude reads every active flow and works out what the bot d
 
 **Input checks.** The two files are hashed, and the run stops if they're identical. It also stops if `flows.json` holds only metadata and no nodes. Flows and triggers are joined on `uuid`, never on name.
 
-**Scope.** The graph starts from flows carrying `--tag`, adds every flow they start, every flow an active trigger starts, and takes one step back: a flow anywhere in the account that starts a flow in scope is added (its other starts are not followed). A trigger counts as active only when `isActive` is true and its end date hasn't passed.
+**Scope.** The full graph holds every flow that starts or is started by another, hands over data, or has an active trigger, a keyword or a Glific setting, up to 30 flows with entry points first; the rest are listed under it as "Not on the graph". A trigger counts as active only when `isActive` is true and its end date hasn't passed.
 
 **The graph.** Each flow, trigger, keyword and contact group is a small box, and `graph_layout.py` lays them out left to right: a flow sits one layer after the longest chain of starts or data hand-offs that leads to it, and each trigger, keyword or setting box sits just before its flow. Each flow box says in one line what it does (webhook, sends, waits, moves, alerts, sheet, unreachable step). A flow started by a Glific setting gets a grey "Glific setting" box naming it (for example "Default flow"); a flow that nothing in the export starts gets a dashed "No start found" box. A contact group that a schedule sends to gets a green box in the first column, with faint arrows back from the flows that fill or empty it. Solid arrows start a flow, dashed arrows hand over data through a contact field (drawn when one or two flows write that field). Selecting a box opens its full card in a side panel. The same export always gives the same picture.
 
@@ -110,8 +116,7 @@ With `--programmes`, Claude reads every active flow and works out what the bot d
 
 **Below the graph:**
 - a note on shared webhook hosts, groups, sheets, extra keywords and widely shared fields
-- a strip of tagged flows with no link, overflow flows, untagged flows that change groups the map uses, and flows named in triggers or enter_flow actions that aren't in the export
-- a "Tagging gaps" paragraph, where name-prefix guesses are labelled as guesses
+- a table of flows not on the graph, and flows named in triggers or enter_flow actions that aren't in the export
 
 **Built-in checks.** Before saving, the renderer confirms that:
 - the HTML tags balance
@@ -154,7 +159,7 @@ A JSON array with one object per flow:
 ### Notes
 
 - **Inactive flows are skipped.** To include them, remove `"isActive": True` from the filter in `get_all_flows`.
-- **All active flows are saved.** The flow map narrows them down with `--tag` when it renders the page.
+- **All active flows are saved and mapped.** Tags are shown on the page but do not decide what is mapped.
 - **Credentials are blanked before saving.** Glific flow definitions hold webhook credentials in plain text. Before anything is written, the script replaces these with `[redacted]` and prints how many it blanked for each flow:
   - every webhook header value except `Content-Type` and `Accept` (for example `Authorization: Bearer ...`)
   - `user:password@` credentials and query-string values in webhook URLs

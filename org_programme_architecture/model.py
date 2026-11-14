@@ -1,4 +1,4 @@
-"""The model of an export: which flows are in scope, how they start and connect, and the graph's view."""
+"""The model of an export: every active flow, how each starts and connects, and the main graph's view."""
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date
@@ -15,12 +15,10 @@ GRAPH_CAP = 30        # flow boxes on the graph layout
 @dataclass
 class Settings:
     project: str = "Glific chatbot"
-    tag: str = ""                       # empty: start from triggers and keywords instead
     tz: str = "Asia/Kolkata"            # "IST, UTC+5:30" or an IANA name
     today: date = field(default_factory=date.today)
     footer: str = ""
     notes: str = ""                     # context notes text (see README for the format)
-    scope_all: bool = False             # every flow in the export, not just the tag and what it reaches
 
 
 def setting_starts(org, flows):
@@ -64,7 +62,6 @@ class Model:
         self._triggers()
         self._scope()
         self._links()
-        self._roles()
         self._graph_map()
 
     def _masked_trigger(self, t):
@@ -93,9 +90,6 @@ class Model:
     def keywords(self, u):
         return [mask(k) for k in (self.flows.get(u) or {}).get("keywords") or []]
 
-    def tagged(self, u):
-        return bool(self.st.tag) and self.tag_label(u).lower() == self.st.tag.strip().lower()
-
     def _triggers(self):
         """Join on flow uuid. Active means isActive and the end date has not passed."""
         self.active_trig = defaultdict(list)
@@ -117,37 +111,13 @@ class Model:
                 self.findings.append(f"Active trigger {t.get('name')} has no target group.")
 
     def _scope(self):
+        """Every flow in the export is in scope; note flows that are started but not exported."""
+        self.scope = set(self.flows)
         self.missing_targets = defaultdict(set)
-        if self.st.scope_all:
-            self.scope = set(self.flows)
-            self.linked_in = set()
-            for u in self.flows:
-                for v, vname in self.sum[u]["starts"]:
-                    if v not in self.flows:
-                        self.missing_targets[vname].add(u)
-            self._callers()
-            return
-        if self.st.tag:
-            seeds = [u for u in self.flows if self.tagged(u)]
-        else:   # without a tag: everything a contact or a schedule can start, including Glific settings
-            seeds = [u for u in self.flows if self.keywords(u)] + sorted(self.setting_starts)
-        seeds += list(self.active_trig)
-        scope, stack = set(), list(dict.fromkeys(seeds))
-        while stack:
-            u = stack.pop()
-            if u in scope:
-                continue
-            scope.add(u)
+        for u in self.flows:
             for v, vname in self.sum[u]["starts"]:
-                if v in self.flows:
-                    stack.append(v)
-                else:
+                if v not in self.flows:
                     self.missing_targets[vname].add(u)
-        # One step back: flows outside the tag that start a flow in scope. Only one step, and their
-        # other starts are not followed, because callers of a shared flow can belong to other programmes.
-        self.linked_in = {u for u in self.flows if u not in scope and any(v in scope for v, _ in self.sum[u]["starts"])}
-        scope |= self.linked_in
-        self.scope = scope
         self._callers()
 
     def _callers(self):
@@ -180,25 +150,9 @@ class Model:
                 else:
                     self.shared_fields[f] = writers[f]
 
-    def _roles(self):
-        """The role of each flow in scope, for the intermediate table: entry, journey, shared or strip."""
-        sc = self.scope
-        starts_any = lambda u: any(v in sc and v != u for v, _ in self.sum[u]["starts"])
-        self.columns = {}
-        for u in sc:
-            if len(self.callers[u]) >= 2:
-                self.columns[u] = "shared"
-            elif len(self.callers[u]) == 1:
-                self.columns[u] = "journey"
-            elif self.active_trig.get(u) or (self.keywords(u) and starts_any(u)):
-                self.columns[u] = "entry"
-            else:
-                self.columns[u] = "strip"
-
     def _graph_map(self):
-        """The graph has room for more than the card grid: every flow in scope that starts, is
-        started, hands over data, or has a trigger or keyword. A flow on it that nothing in the
-        export starts gets a 'No start found' box in front of it."""
+        """The main graph: every flow that starts, is started, hands over data, or has a trigger,
+        keyword or Glific setting, up to GRAPH_CAP boxes with entry points first."""
         sc = self.scope
         linked = set()
         for u in sc:
@@ -219,12 +173,25 @@ class Model:
         if overflow:
             self.findings.append(f"{plural(len(overflow), 'flow')} moved from the graph to the strip to keep it readable: {join(map(self.name, overflow), 8)}.")
         self.view = self.graph_view(on, add_fillers=True)
-        # Flows that fill a group a schedule on the graph sends to join the scope, and the table
-        self.scope |= self.view.linked_group
-        for u in self.view.linked_group:
-            self.columns[u] = "group"
         self.strip = [u for u in sorted((u for u in sc if u not in on and u not in overflow), key=by_name) + overflow
                       if u not in self.view.on_map]
+
+    def report(self):
+        """Findings worth printing after a run: trigger problems found while reading, steps no
+        path reaches, flows started or triggered but missing from the export, unknown step types."""
+        out = list(self.findings)
+        for u in sorted(self.flows, key=self.name):
+            if self.sum[u]["lost"]:
+                out.append(f"{self.name(u)} holds {join(self.sum[u]['lost'], 3)} that no path reaches.")
+        for n, us in sorted(self.missing_targets.items()):
+            out.append(f"{n} is entered by {join(sorted(map(self.name, us)), 3)} but is not in the flows file.")
+        for n, ts in sorted(self.missing_trig.items()):
+            if any(t.get("isActive") for t in ts):
+                out.append(f"An active trigger starts {n}, which is not in the flows file.")
+        unknown = Counter(k for u in self.flows for k in self.sum[u]["other"])
+        if unknown:
+            out.append("Unrecognised step types: " + join([f"{k} ({n})" for k, n in unknown.items()]) + ".")
+        return list(dict.fromkeys(out))
 
     def graph_view(self, flow_ids, add_fillers=False, no_starts=frozenset(), ignore_callers=frozenset()):
         """The boxes and edges for exactly these flows, as a GraphView. Nothing on the model changes."""

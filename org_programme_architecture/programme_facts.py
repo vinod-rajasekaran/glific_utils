@@ -93,7 +93,7 @@ def _move_text(direction, groups, cond):
 
 
 def build_facts(m):
-    """Facts for every flow in the model's scope (use Settings(scope_all=True) for the whole export)."""
+    """Facts for every active flow in the export."""
     return _Facts(m).build()
 
 

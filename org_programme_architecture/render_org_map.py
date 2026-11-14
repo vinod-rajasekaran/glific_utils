@@ -1,6 +1,7 @@
-"""The programme page: the org's programmes first, then each one as a graph with a side pane.
+"""The org map page: programmes (from Claude) or groups of linked flows (without Claude) first,
+then each one as a graph with a side pane, and the full flow graph.
 
-    render_programme_page(model, facts, validated, dropped, settings) -> html
+    render_org_map(model, facts, answer, dropped) -> html
 
 Everything Claude wrote is shown under "Claude's reading" with its confidence, and each
 statement opens to the evidence it cites. Every number, link, schedule and group comes from
@@ -14,8 +15,8 @@ from string import Template
 
 from cards import flow_card
 from graph_svg import graph_svg
-from render_graph import BASE_CSS, _Balance
-from sections import context_section, shared_resources, strip_section, tagging_gaps
+from page_check import check_html
+from sections import context_section, shared_resources, strip_section
 from text import esc, fmt_day, join, plural, typo
 from programme_claude import MODEL, wrap_use_case
 
@@ -45,6 +46,7 @@ class _Ctx:
         self.prog_of = {fid: self.prog_of_uc[u] for fid, u in self.uc_of.items() if u in self.prog_of_uc}
         self.prog_name = {p["id"]: p["name"] for p in self.programmes}
         self.prog_kind = {p["id"]: p["kind"] for p in self.programmes}
+        self.claude = uc.get("source") != "structure"     # False: groups worked out without Claude
         self.excerpt = {e["id"]: (f["id"], e) for f in facts["flows"] for e in f["excerpts"]}
         self.group = {g["id"]: g for g in facts["groups"]}
         self.trigger = {x["id"]: x for x in facts["triggers"]}
@@ -100,7 +102,7 @@ def statements(cx, heading, items, cls=""):
     return f'<h3 class="ph{cls}">{esc(heading)}</h3><ul class="sts">{"".join(statement(cx, s) for s in items)}</ul>'
 
 
-def pills(cx, u, tag, brief=False):
+def pills(cx, u, brief=False):
     """Pills computed from the facts. brief keeps the first screen short: flows, how they start,
     outside systems and Claude's concerns."""
     m, members = cx.m, set(u["flows"])
@@ -111,7 +113,7 @@ def pills(cx, u, tag, brief=False):
             if s["kind"] == "flow" and s["ref"] in members:
                 continue
             kinds[s["kind"]] += 1
-    names = {"trigger": "Schedule", "setting": "Glific setting", "keyword": "Keyword", "flow": "Started from another use case",
+    names = {"trigger": "Schedule", "setting": "Glific setting", "keyword": "Keyword", "flow": "Started from another part",
              "none": "No start found"}
     out += [(names[k], "warn" if k == "none" else "") for k in ("trigger", "setting", "keyword", "flow", "none") if kinds[k]]
     hosts, functions, sheets, alerts, groups = set(), False, False, False, set()
@@ -142,10 +144,8 @@ def pills(cx, u, tag, brief=False):
         out.append(("Staff alerts", "warn"))
     if groups:
         out.append(("Groups: " + join(sorted(groups), 3), ""))
-    if tag:
-        untagged = sum(1 for fid in members if not cx.m.tagged(fid))
-        if untagged:
-            out.append((f"{untagged} of {len(members)} without the {tag} tag", "warn"))
+    tags = Counter(m.tag_label(fid) or "no tag" for fid in members)
+    out.append(("Tags: " + join([f"{tg} ({n})" for tg, n in sorted(tags.items(), key=lambda kv: (-kv[1], kv[0]))], 4), ""))
     lost = sum(1 for fid in members if m.sum[fid]["lost"])
     if lost:
         out.append((f"{plural(lost, 'flow')} with unreachable steps", "warn"))
@@ -169,9 +169,9 @@ def neighbours(cx, members):
 
 def flow_pane(cx, fid, findings, view=None):
     f, c = cx.flow[fid], cx.claude_flow.get(fid, {})
-    head = (f'<div class="fp-head"><h3>{t(f["name"])}</h3><span class="role claude r-{esc(c.get("role", "unknown"))}" '
-            f'title="Claude\u2019s reading">'
-            f'{esc(ROLE_LABEL.get(c.get("role", "unknown"), "Role unclear"))}</span></div>')
+    role = (f'<span class="role claude r-{esc(c.get("role", "unknown"))}" title="Claude\u2019s reading">'
+            f'{esc(ROLE_LABEL.get(c.get("role", "unknown"), "Role unclear"))}</span>') if cx.claude else ""
+    head = f'<div class="fp-head"><h3>{t(f["name"])}</h3>{role}</div>'
     purpose = ""
     if c.get("purpose"):
         items = "".join(cx.evidence_item(r) for r in c.get("evidence", []))
@@ -234,7 +234,7 @@ def test_readers_note(cx, members, tests):
             f'{plural(len(tests), "test flow")} ({t(names)}) {esc(what)}. They are left off this graph.</p>')
 
 
-def programme_view(cx, prog, findings, tag):
+def programme_view(cx, prog, findings):
     """One programme: a graph of all its parts' flows (each box striped by its part) beside a pane
     with the programme's story and a section per part."""
     m, pid = cx.m, prog["id"]
@@ -264,7 +264,8 @@ def programme_view(cx, prog, findings, tag):
         u = parts[0]
         sections = (statements(cx, "What happens", u["story"]) + statements(cx, "How it works", u["how_it_works"])
                     + statements(cx, "What to watch", u["watch"], " w"))
-    story = (f'<div class="pane-story"><p class="muted">{claude_label(prog["confidence"])}</p>'
+    reading = f'<p class="muted">{claude_label(prog["confidence"])}</p>' if cx.claude else ""
+    story = (f'<div class="pane-story">{reading}'
              + statements(cx, "The programme end to end", prog["story"])
              + (f'<h3 class="ph w">What to watch across it</h3>{test_note}' if test_note and not prog["watch"] else "")
              + (statements(cx, "What to watch across it", prog["watch"], " w").replace('<ul class="sts">', f'{test_note}<ul class="sts">', 1)
@@ -281,8 +282,8 @@ def programme_view(cx, prog, findings, tag):
     whole = programme_whole(prog, parts)
     return (f'<section class="ucview" id="uc-{esc(pid)}" hidden>'
             f'<p><a class="back" href="#">\u2190 All programmes</a></p>'
-            f'<h2>{t(prog["name"])}</h2><p class="lede2"><span class="reading">Claude\u2019s reading</span><br>{t(prog["summary"])}</p>'
-            f'<div class="pills">{pills(cx, whole, tag)}</div>{legend}'
+            f'<h2>{t(prog["name"])}</h2><p class="lede2">{reading_label(cx)}{t(prog["summary"])}</p>'
+            f'<div class="pills">{pills(cx, whole)}</div>{legend}'
             f'<div class="ucgrid"><div class="gscroll">{svg}</div>'
             f'<aside class="pane" aria-live="polite"><button type="button" class="pane-back" hidden>\u2190 Back to the story</button>'
             f'<div class="pane-body">{story}</div><template class="story-tpl">{story}</template></aside></div>'
@@ -297,81 +298,89 @@ GRAPH_LEGEND = ('<div class="legend" aria-label="Legend"><span><i class="sw t"><
                 '<span><i class="ln d"></i>Hands over data</span><span><i class="ln g"></i>Fills or empties a group</span></div>')
 
 
-def full_graph_view(gm, st, findings):
-    """The whole flow graph (the tag's scope, or triggers and keywords without a tag) as one more view."""
+def full_graph_view(m, findings):
+    """The model's main graph, straight from the export, as one more view."""
     # "-graph" can never be a programme id (slugs never start with "-"), and the page script
     # derives each graph's id prefix from its section id, so the two must match
-    svg, tpls = graph_svg(gm, gm.view, findings, ns=f"{FULL_GRAPH}-")
-    start = f"the flows tagged {st.tag}" if st.tag else "active triggers and keywords"
-    story = (f'<div class="pane-story"><h3 class="ph">How to read it</h3><p class="muted">The graph starts from {esc(start)} '
-             f'and shows {plural(len(gm.view.on_map), "flow")}. Time runs left to right: how each flow starts, then what it starts '
-             'or hands data to. Select a box to see that flow in detail.</p></div>')
-    below = shared_resources(gm) + strip_section(gm) + tagging_gaps(gm)
+    svg, tpls = graph_svg(m, m.view, findings, ns=f"{FULL_GRAPH}-")
+    story = ('<div class="pane-story"><h3 class="ph">How to read it</h3><p class="muted">The graph shows '
+             f'{plural(len(m.view.on_map), "flow")}: every flow that starts or is started by another, hands over data, or has a '
+             'trigger, keyword or Glific setting. Time runs left to right: how each flow starts, then what it starts or hands '
+             'data to. Select a box to see that flow in detail.</p></div>')
     return (f'<section class="ucview" id="uc-{FULL_GRAPH}" hidden>'
             f'<p><a class="back" href="#">\u2190 All programmes</a></p>'
-            f'<h2>Full flow graph</h2><p class="lede2">Every flow and how it starts, from the export alone; no Claude reading here.</p>'
+            f'<h2>Full flow graph</h2><p class="lede2">Every flow and how it starts, from the export alone.</p>'
             f'{GRAPH_LEGEND}'
             f'<div class="ucgrid"><div class="gscroll">{svg}</div>'
             f'<aside class="pane" aria-live="polite"><button type="button" class="pane-back" hidden>\u2190 Back</button>'
             f'<div class="pane-body">{story}</div><template class="story-tpl">{story}</template></aside></div>'
-            f'{below}' + "".join(tpls) + "</section>")
+            f'{strip_section(m)}' + "".join(tpls) + "</section>")
 
 
-def render_programme_page(m, facts, uc, dropped, st, graph_model=None):
-    cx = _Ctx(m, facts, uc)
+def reading_label(cx):
+    return '<span class="reading">Claude\u2019s reading</span><br>' if cx.claude else ""
+
+
+def render_org_map(m, facts, answer, dropped=()):
+    """The page: a card per programme (from Claude) or per group of linked flows (without Claude),
+    a view for each, and the full flow graph. answer is Claude's validated answer, or
+    grouping.group_answer() when Claude was not used."""
+    st, cx = m.st, _Ctx(m, facts, answer)
     findings = list(m.findings)
     order = sorted(cx.programmes, key=lambda p: p["kind"] == "tests")
     cards = ""
     for p in order:
         parts = [cx.use_case[x] for x in p["parts"]]
-        whole = programme_whole(p, parts)
         chips = (f'<div class="partlegend">{"".join(part_chip(min(i, 6), u["name"]) for i, u in enumerate(parts, 1))}</div>'
                  if len(parts) > 1 else "")
         cards += (f'<a class="uccard{" muted-card" if p["kind"] == "tests" else ""}" href="#uc-{esc(p["id"])}">'
-                  f'<h3>{t(p["name"])}</h3><p><span class="reading">Claude\u2019s reading</span><br>{t(p["summary"])}</p>'
-                  f'{chips}<div class="pills">{pills(cx, whole, st.tag, brief=True)}</div></a>')
-    shared = shared_resources(m)
-    views = "".join(programme_view(cx, p, findings, st.tag) for p in order)
-    if graph_model is not None:
-        views += full_graph_view(graph_model, st, findings)
-        cards += (f'<a class="uccard graphcard" href="#uc-{FULL_GRAPH}"><h3>Full flow graph</h3>'
-                  '<p>Every flow, how it starts and what it leads to, straight from the export.</p></a>')
+                  f'<h3>{t(p["name"])}</h3><p>{reading_label(cx)}{t(p["summary"])}</p>'
+                  f'{chips}<div class="pills">{pills(cx, programme_whole(p, parts), brief=True)}</div></a>')
+    cards += (f'<a class="uccard graphcard" href="#uc-{FULL_GRAPH}"><h3>Full flow graph</h3>'
+              '<p>Every flow, how it starts and what it leads to, straight from the export.</p></a>')
+    views = "".join(programme_view(cx, p, findings) for p in order) + full_graph_view(m, findings)
 
-    org = uc["org_summary"]
-    org_items = "".join(cx.evidence_item(r) for r in org["evidence"])
-    org_html = (f'<div class="org"><p class="muted">{claude_label(org["confidence"])}</p><p>{t(org["text"])}</p>'
-                + (f'<details class="evd"><summary>Evidence</summary><ul>{org_items}</ul></details>' if org_items else "") + "</div>")
+    if cx.claude:
+        org = answer["org_summary"]
+        org_items = "".join(cx.evidence_item(r) for r in org["evidence"])
+        intro = (f'<div class="org"><p class="muted">{claude_label(org["confidence"])}</p><p>{t(org["text"])}</p>'
+                 + (f'<details class="evd"><summary>Evidence</summary><ul>{org_items}</ul></details>' if org_items else "") + "</div>")
+    else:
+        intro = (f'<div class="org banner"><p><b>Built without Claude</b>: {t(answer.get("reason") or "it was not asked for")}.</p>'
+                 '<p>The groups below are flows that start each other, hand over data, or fill a group a schedule sends to, '
+                 'named after the tag most of their flows carry. Run with an Anthropic API key for programme names, stories '
+                 'and what each flow is for.</p></div>')
 
     not_placed = ""
-    if uc["not_placed"]:
+    if answer["not_placed"]:
         rows = "".join(f'<li><b>{t(cx.flow[f]["name"])}</b>{": " + t(cx.claude_flow[f]["purpose"]) if cx.claude_flow.get(f, {}).get("purpose") else ""}</li>'
-                       for f in uc["not_placed"])
-        not_placed = f'<section class="sect"><h2>Not placed</h2><p>Claude could not tell which use case these flows belong to.</p><ul class="plain">{rows}</ul></section>'
+                       for f in answer["not_placed"])
+        not_placed = f'<section class="sect"><h2>Not placed</h2><p>Claude could not tell which programme these flows belong to.</p><ul class="plain">{rows}</ul></section>'
     dropped_html = ""
     if dropped:
         dropped_html = (f'<section class="sect"><details><summary>Dropped by validation ({len(dropped)})</summary>'
-                        '<p>These parts of Claude’s answer referred to things that are not in the export, or had no evidence, so they are not shown.</p>'
+                        '<p>These parts of Claude\u2019s answer referred to things that are not in the export, or had no evidence, so they are not shown.</p>'
                         f'<ul class="plain">{"".join(f"<li>{t(d)}</li>" for d in dropped)}</ul></details></section>')
 
     active_n = sum(map(len, m.active_trig.values()))
-    lede = (f"{plural(len(facts['flows']), 'active flow')} in the export, grouped by Claude into "
-            f"{plural(len(cx.programmes), 'programme')} with {plural(len(uc['use_cases']), 'part')}. {plural(active_n, 'trigger')} "
+    grouped = (f"grouped by Claude into {plural(len(cx.programmes), 'programme')} with {plural(len(answer['use_cases']), 'part')}"
+               if cx.claude else f"grouped by their links into {plural(len(cx.programmes), 'group')}")
+    lede = (f"{plural(len(facts['flows']), 'active flow')} in the export, {grouped}. {plural(active_n, 'trigger')} "
             f"{'is' if active_n == 1 else 'are'} active on {fmt_day(datetime.combine(st.today, datetime.min.time()))}. "
             f"Times are in {m.tz_label}.")
-    footer = " ".join(x for x in [st.footer.strip(), f"Programmes and descriptions by Claude ({uc.get('model') or MODEL}); every number, link and "
-                                  "schedule comes from flows.json and triggers.json. Generated by glific_utils."] if x)
+    made = (f"Programmes and descriptions by Claude ({answer.get('model') or MODEL}); every number, link and schedule comes from "
+            "flows.json and triggers.json." if cx.claude else "Groups worked out from the flows\u2019 links; no Claude was used.")
+    footer = " ".join(x for x in [st.footer.strip(), made, "Generated by glific_utils."] if x)
     page = Template(UC_PAGE).substitute(
         css=BASE_CSS + UC_CSS, title=esc(f"{st.project} org map"), h1=t(f"{st.project}: what the bot does"),
-        lede=t(lede), org=org_html + context_section(st.notes), cards=cards, shared=shared, not_placed=not_placed,
+        lede=t(lede), org=intro + context_section(st.notes), cards=cards, shared=shared_resources(m), not_placed=not_placed,
         dropped=dropped_html, views=views, footer=t(footer),
         uc_of=json.dumps({f"f-{k}": v for k, v in cx.prog_of.items()}).replace("</", "<\\/"))
-    b = _Balance()
-    b.feed(page)
-    if b.errors or b.stack:
-        raise ValueError(f"Use-case page tags do not balance: {b.errors[:3]} open={b.stack[-3:]}")
+    check_html(page)
     return page
 
 
+BASE_CSS = (ASSETS / "base.css").read_text(encoding="utf-8")
 UC_CSS = (ASSETS / "programmes.css").read_text(encoding="utf-8")
 
 UC_PAGE = (ASSETS / "programmes_page.html").read_text(encoding="utf-8")

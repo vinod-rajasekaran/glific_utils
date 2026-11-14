@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
-"""Pull all flows and triggers from Glific and build the graph page and, with --programmes, the programme page.
+"""Map a Glific org: pull every active flow, trigger and the flow settings, and build one page.
 
-Each run writes three files to a new folder, output/org_programme_architecture/<YYYY-MM-DD_HH-MM-SS>/:
+By default Claude reads cleaned facts about the flows and groups them into programmes with
+stories (needs ANTHROPIC_API_KEY and pip install anthropic). With --no-claude, or when Claude
+cannot be used, the flows are grouped by their links instead and nothing leaves the machine.
+
+Each run writes to a new folder, output/org_programme_architecture/<YYYY-MM-DD_HH-MM-SS>/:
   flows.json               every active flow with nodes and edges (credentials blanked)
   triggers.json            every trigger, with a readable schedule
-  settings.json            the organisation settings that start flows (default, new contact, opt-in, ...)
-  org_map.html             the page: the flow graph, or with --programmes the programme page
-                           (the full graph is one of its views)
+  settings.json            the organisation's name and the settings that start flows
+  claude_input.json        what was sent to Claude (when Claude is used)
+  claude_output.json       Claude's answer (when Claude is used)
+  org_map.html             the page
 
-Usage (same env vars as the other scripts; settings can also come from .env):
-  python3 build_org_map.py --project "My Bot" --tag "2025 Pilot"
-  python3 build_org_map.py --from-json output/org_programme_architecture/2026-11-11_21-43-05 --tag "2025 Pilot"
-      # re-render from JSON saved earlier, without calling the API. The result goes to a new
-      # run folder with copies of the JSON; the source folder is not touched.
+Usage (settings come from .env):
+  python3 build_org_map.py                       # live pull from Glific, with Claude
+  python3 build_org_map.py --no-claude           # live pull, grouped by links, nothing sent to Claude
+  python3 build_org_map.py --from-json output/org_programme_architecture/<run>
+      # rebuild from a run saved earlier, without calling Glific; add --reuse-claude <run> to
+      # reuse that run's Claude answer instead of asking again
 """
 import argparse
 import hashlib
@@ -28,8 +34,8 @@ from glific_get_settings import fetch_settings
 from glific_get_triggers import fetch_triggers
 from model import Model, Settings
 from privacy import mask
-from render_graph import render_page
-from render_programmes import render_programme_page
+from grouping import group_answer
+from render_org_map import render_org_map
 from programme_claude import MODEL, PROMPT_PATH, ProgrammeError, run_programmes, validate
 from programme_facts import build_facts
 
@@ -47,7 +53,7 @@ def check_inputs(flows, triggers, paths=()):
         sys.exit("flows.json and triggers.json must each hold a JSON list.")
     if flows and not any(f.get("nodes") for f in flows):
         sys.exit("flows.json holds only flow metadata and no nodes, so links cannot be derived from it.\n"
-                 "Export the full flow definitions (glific_get_flows.py does this), ideally filtered by the tag.")
+                 "Export the full flow definitions (glific_get_flows.py does this).")
 
 
 def parse_args():
@@ -55,18 +61,14 @@ def parse_args():
     p.add_argument("--from-json", metavar="DIR", type=Path, help="folder with flows.json and triggers.json; re-renders the HTML only")
     p.add_argument("--project", default=None,
                    help="name for the page titles (default: the organisation's name from Glific, else 'Glific chatbot')")
-    p.add_argument("--tag", default=os.environ.get("GLIFIC_TAG", ""), help="flow tag to start from, e.g. '2025 Pilot' (default: start from triggers and keywords)")
     p.add_argument("--tz", default=os.environ.get("GLIFIC_TZ", "Asia/Kolkata"), help="display timezone: 'IST, UTC+5:30' or an IANA name")
     p.add_argument("--date", type=date.fromisoformat, default=None,
                    help="the snapshot date, YYYY-MM-DD: decides which triggers have ended "
                         "(default: today, or the date the --from-json folder name starts with)")
-    p.add_argument("--programmes", action="store_true",
-                   default=os.environ.get("GLIFIC_PROGRAMMES", "").lower() in ("1", "true", "yes"),
-                   help="also ask Claude to explain the bot as programmes and their parts, on the same page; "
-                        "sends cleaned facts and message excerpts to the Anthropic API (needs ANTHROPIC_API_KEY "
-                        "and pip install anthropic; env GLIFIC_PROGRAMMES=1)")
+    p.add_argument("--no-claude", action="store_true",
+                   help="do not send anything to Claude: group the flows by their links instead of into programmes")
     p.add_argument("--reuse-claude", metavar="DIR", type=Path,
-                   help="with the programme page: read Claude's answer from DIR/claude_output.json instead of calling the API")
+                   help="read Claude's answer from DIR/claude_output.json instead of calling the API")
     p.add_argument("--footer", default="", help="one sentence for the footer")
     p.add_argument("--notes", type=Path, help="text file with context notes (see README)")
     args = p.parse_args()
@@ -82,17 +84,20 @@ def parse_args():
 def main():
     args = parse_args()
     flows, triggers, org, out_dir = load_saved(args.from_json) if args.from_json else fetch_live()
-    graph_model = Model(flows, triggers, settings_from(args, org), org=org)   # built once: the graph page and the programme page's full graph
-    page, findings = render_page(graph_model, out=sys.stderr)
+    m = Model(flows, triggers, settings_from(args, org), org=org)
+    findings = m.report()
     print("\nFindings:" if findings else "\nFindings: none", file=sys.stderr)
     for f in findings:
         print(f"  {f}", file=sys.stderr)
-    if args.programmes or args.reuse_claude:
-        # One page per run: with programmes, the programme page (the full graph is one of its views)
-        page = programme_step(args, flows, triggers, out_dir, org, graph_model) or page
+    facts = build_facts(m)
+    answer, dropped = claude_answer(args, facts, out_dir) if not args.no_claude else (None, [])
+    if answer is None:
+        reason = "it was run with --no-claude" if args.no_claude else getattr(args, "claude_skipped", "Claude could not be used")
+        answer = group_answer(m, reason)
     path = out_dir / HTML_NAME
-    path.write_text(page, encoding="utf-8")
-    print(f"\nSaved {path}", file=sys.stderr)
+    path.write_text(render_org_map(m, facts, answer, dropped), encoding="utf-8")
+    print(f"\nSaved {path} ({'programmes from Claude' if answer.get('source') != 'structure' else 'groups by links, no Claude'})",
+          file=sys.stderr)
     print(path.resolve())  # the only line on stdout, so wrappers can open it
 
 
@@ -101,9 +106,9 @@ def project_name(args, org):
     return args.project or mask(str((org or {}).get("name") or "")).strip() or "Glific chatbot"
 
 
-def settings_from(args, org, scope_all=False):
-    return Settings(project=project_name(args, org), tag=args.tag, tz=args.tz, today=args.date, footer=args.footer,
-                    notes=args.notes.read_text() if args.notes else "", scope_all=scope_all)
+def settings_from(args, org):
+    return Settings(project=project_name(args, org), tz=args.tz, today=args.date, footer=args.footer,
+                    notes=args.notes.read_text() if args.notes else "")
 
 
 def load_saved(folder):
@@ -142,23 +147,19 @@ def fetch_live():
     return flows, triggers, org, out_dir
 
 
-def programme_step(args, flows, triggers, out_dir, org, graph_model):
-    """Facts, Claude, validation and the programme page. Returns its HTML, or None when skipped.
-
-    Nothing that goes wrong here may cost the user the graph page, so every error ends the
-    step with a one-line reason."""
+def claude_answer(args, facts, out_dir):
+    """Claude's validated answer and what validation dropped, or (None, []) when Claude cannot
+    be used; args.claude_skipped then says why. Nothing that goes wrong here may cost the page."""
     try:
-        return _programme_step(args, flows, triggers, out_dir, org, graph_model)
+        return _claude_answer(args, facts, out_dir)
     except Exception as e:   # noqa: BLE001 - deliberately broad, see the docstring
         reason = str(e) if isinstance(e, ProgrammeError) else f"{type(e).__name__}: {e}"
-        print(f"\nThe programme page was skipped: {reason}. The graph page was written instead.", file=sys.stderr)
-        return None
+        args.claude_skipped = f"Claude could not be used ({reason})"
+        print(f"\nClaude was not used: {reason}. The flows are grouped by their links instead.", file=sys.stderr)
+        return None, []
 
 
-def _programme_step(args, flows, triggers, out_dir, org, graph_model):
-    st = settings_from(args, org, scope_all=True)
-    m = Model(flows, triggers, st, org=org)
-    facts = build_facts(m)
+def _claude_answer(args, facts, out_dir):
     save_json({"model": MODEL, "system": PROMPT_PATH.read_text(encoding="utf-8"), "facts": facts}, "claude_input.json", out_dir)
     if args.reuse_claude:
         raw = json.loads((args.reuse_claude / "claude_output.json").read_text(encoding="utf-8"))
@@ -166,7 +167,8 @@ def _programme_step(args, flows, triggers, out_dir, org, graph_model):
         validated, notes = validate(raw, facts)
         print(f"Using Claude's saved answer from {args.reuse_claude}", file=sys.stderr)
     else:
-        print(f"Asking Claude ({MODEL}) to read {len(facts['flows'])} flows; this can take a few minutes...", file=sys.stderr)
+        print(f"Sending cleaned facts about {len(facts['flows'])} flows to Claude ({MODEL}); this can take a few minutes. "
+              "Use --no-claude to keep everything on this machine.", file=sys.stderr)
         try:
             raw, validated, notes = run_programmes(facts)
         except ProgrammeError as e:
@@ -178,8 +180,7 @@ def _programme_step(args, flows, triggers, out_dir, org, graph_model):
         print(f"\nValidation dropped {len(notes)} parts of Claude's answer (listed on the page):", file=sys.stderr)
         for n in notes[:10]:
             print(f"  {n}", file=sys.stderr)
-    return render_programme_page(m, facts, validated, notes, st, graph_model=graph_model)
-
+    return validated, notes
 
 if __name__ == "__main__":
     main()

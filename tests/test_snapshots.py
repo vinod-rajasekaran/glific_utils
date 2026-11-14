@@ -10,28 +10,30 @@ from tests.helpers import ROOT, TODAY, hostile, load  # also puts org_programme_
 import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
 import programme_facts as uf  # noqa: E402
-import render_graph as ra  # noqa: E402
-import render_programmes as ru  # noqa: E402
+import render_org_map as ru  # noqa: E402
+from grouping import group_answer  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 SNAP = ROOT / "tests" / "snapshots"
 ORG = {"newcontactFlowId": "001", "outOfOffice": {"defaultFlowId": "008"}}
+NO_CLAUDE = "it was run with --no-claude"
+
+
+def _groups(flows, triggers, org=None):
+    m = md.Model(flows, triggers, md.Settings(project="Demo", today=TODAY), org=org)
+    return ru.render_org_map(m, uf.build_facts(m), group_answer(m, NO_CLAUDE))
 
 
 def pages():
     flows, triggers = load()
-    out = {}
-    out["graph.html"] = ra.render_html(flows, triggers, md.Settings(project="Demo", tag="Demo", today=TODAY), org=ORG)[0]
-    out["graph_notag.html"] = ra.render_html(flows, triggers, md.Settings(project="Demo", today=TODAY), org=ORG)[0]
-    st = md.Settings(project="Demo", tag="Demo", scope_all=True, today=TODAY, notes="journey Field: f:Visit | c:Welcome")
+    out = {"org_map_groups.html": _groups(flows, triggers, ORG)}
+    st = md.Settings(project="Demo", today=TODAY, notes="journey Field: f:Visit | c:Welcome")
     m = md.Model(flows, triggers, st, org=ORG)
     facts = uf.build_facts(m)
     v, p = uc.validate(json.loads((FIX / "claude_output_programmes.json").read_text()), facts)
-    gm = md.Model(flows, triggers, md.Settings(project="Demo", tag="Demo", today=TODAY), org=ORG)
-    out["programmes.html"] = ru.render_programme_page(m, facts, v, p, st, graph_model=gm)
+    out["org_map_claude.html"] = ru.render_org_map(m, facts, v, p)
     out["facts.json"] = json.dumps(facts, indent=1, ensure_ascii=False, sort_keys=True)
-    hf, ht = hostile()
-    out["hostile_graph.html"] = ra.render_html(hf, ht, md.Settings(project="Demo", today=TODAY))[0]
+    out["hostile_groups.html"] = _groups(*hostile())
     return out
 
 

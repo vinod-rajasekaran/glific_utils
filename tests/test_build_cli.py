@@ -26,7 +26,7 @@ def run(*args, **env):
 
 class BuildCliTest(unittest.TestCase):
     def test_reuse_claude_writes_page(self):
-        p, out = run("--programmes", "--reuse-claude", str(FIX))
+        p, out = run("--reuse-claude", str(FIX))
         self.assertEqual(p.returncode, 0, p.stderr)
         pages = p.stdout.split()
         self.assertEqual(len(pages), 1)
@@ -42,34 +42,31 @@ class BuildCliTest(unittest.TestCase):
     def test_no_sdk_falls_back(self):
         block = tempfile.mkdtemp()
         (Path(block) / "anthropic.py").write_text("raise ImportError('blocked for the test')\n")
-        p, out = run("--programmes", PYTHONPATH=block)
+        p, out = run(PYTHONPATH=block)          # Claude is the default, but the package is missing
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn("programme page was skipped", p.stderr)
+        self.assertIn("Claude was not used", p.stderr)
         self.assertIn("anthropic", p.stderr)
         pages = p.stdout.split()
         self.assertEqual(len(pages), 1)
         self.assertTrue(pages[0].endswith("org_map.html"))
         page = Path(pages[0]).read_text()
         self.assertIn('class="fgraph"', page)
-        self.assertNotIn('id="home"', page)
+        self.assertIn("Built without Claude", page)
+        self.assertIn("anthropic", page)
 
-    def test_env_flag_turns_step_on(self):
-        p, _ = run("--reuse-claude", str(FIX), GLIFIC_PROGRAMMES="1")
-        self.assertIn('id="home"', Path(p.stdout.split()[0]).read_text(), p.stderr)
-
-    def test_graph_page_written(self):
-        p, _ = run()
+    def test_page_written_without_claude(self):
+        p, _ = run("--no-claude")
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('class="fgraph"', Path(p.stdout.split()[0]).read_text())
 
 
-class StepNeverLosesGraphPage(unittest.TestCase):
+class ClaudeStepNeverLosesPage(unittest.TestCase):
     def test_clean_text_survives_odd_urls(self):
         out = pv.clean_text("see https://[your-link] and https://user:pw@host.org/x?token=1", set())
         self.assertNotIn("pw@", out)
         self.assertNotIn("token", out)
 
-    def test_unexpected_error_still_prints_graph_page(self):
+    def test_bad_saved_answer_falls_back_to_groups(self):
         bad = tempfile.mkdtemp()
         (Path(bad) / "claude_output.json").write_text(json.dumps({"use_cases": [{"name": "x", "flows": 5}]}))
         out = tempfile.mkdtemp()
@@ -78,7 +75,8 @@ class StepNeverLosesGraphPage(unittest.TestCase):
         p = subprocess.run([sys.executable, str(ROOT / "org_programme_architecture" / "build_org_map.py"),
                             "--from-json", str(FIX), "--reuse-claude", bad], capture_output=True, text=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn("was skipped", p.stderr)
+        self.assertIn("Claude was not used", p.stderr)
+        self.assertIn("Built without Claude", Path(p.stdout.split()[0]).read_text())
         self.assertTrue(p.stdout.split()[0].endswith("org_map.html"))
 
 
@@ -92,15 +90,11 @@ class SettingsCliTest(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if not k.startswith(("GLIFIC_", "ANTHROPIC_"))}
         env.update(GLIFIC_OUTPUT_ROOT=out, GLIFIC_NO_DOTENV="1")
         p = subprocess.run([sys.executable, str(ROOT / "org_programme_architecture" / "build_org_map.py"),
-                            "--from-json", str(src), "--date", "2026-11-13"], capture_output=True, text=True, env=env)
+                            "--from-json", str(src), "--date", "2026-11-13", "--no-claude"], capture_output=True, text=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
         page = Path(p.stdout.split()[0])
         self.assertTrue((page.parent / "settings.json").is_file())
         self.assertIn("Glific setting", page.read_text())
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class OrgNameTest(unittest.TestCase):
@@ -112,13 +106,17 @@ class OrgNameTest(unittest.TestCase):
         out = tempfile.mkdtemp()
         e = {k: v for k, v in os.environ.items() if not k.startswith(("GLIFIC_", "ANTHROPIC_"))}
         e.update({"GLIFIC_OUTPUT_ROOT": out, "GLIFIC_NO_DOTENV": "1"}, **env)
-        p = subprocess.run([sys.executable, str(BUILD), "--from-json", str(src), "--date", "2026-11-13", *args],
+        p = subprocess.run([sys.executable, str(BUILD), "--from-json", str(src), "--date", "2026-11-13", "--no-claude", *args],
                            capture_output=True, text=True, env=e, cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stderr)
         return Path(p.stdout.split()[0]).read_text()
 
     def test_org_name_from_settings(self):
-        self.assertIn("<title>Healthy Families Trust flow map</title>", self.run_with_settings())
+        self.assertIn("<title>Healthy Families Trust org map</title>", self.run_with_settings())
 
     def test_project_flag_wins(self):
-        self.assertIn("<title>Pilot review flow map</title>", self.run_with_settings("--project", "Pilot review"))
+        self.assertIn("<title>Pilot review org map</title>", self.run_with_settings("--project", "Pilot review"))
+
+
+if __name__ == "__main__":
+    unittest.main()

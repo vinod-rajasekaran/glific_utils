@@ -6,7 +6,7 @@ Claude returns structured JSON (enforced by SCHEMA). validate() checks every ID 
 evidence reference against the facts and drops what does not match. When the first
 response has problems, Claude gets one chance to fix them; after that, problems only
 remove the items they affect, and the notes say what was removed. A response that is
-unusable as a whole raises ProgrammeError, and the caller falls back to the graph page.
+unusable as a whole raises ProgrammeError, and the caller groups the flows by their links instead.
 """
 import json
 import re
@@ -22,7 +22,7 @@ KINDS = ["journey", "support", "admin", "tests"]
 
 
 class ProgrammeError(Exception):
-    """The Claude step produced nothing usable; the run continues with the graph page."""
+    """The Claude step produced nothing usable; the run groups the flows by their links instead."""
 
 
 def _obj(**props):

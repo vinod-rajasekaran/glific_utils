@@ -9,7 +9,7 @@ from tests.helpers import FIX, U, model, facts, raw, programmes_raw, validated, 
 import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
 import programme_facts as uf  # noqa: E402
-import render_programmes as ru  # noqa: E402
+import render_org_map as ru  # noqa: E402
 
 
 class ValidateTest(unittest.TestCase):
@@ -142,7 +142,7 @@ class ProgrammeValidateTest(unittest.TestCase):
         raw["programmes"] = raw["programmes"][:1]          # "tests" use case now in no programme
         flows = json.loads((FIX / "flows.json").read_text())
         triggers = json.loads((FIX / "triggers.json").read_text())
-        m = md.Model(flows, triggers, md.Settings(scope_all=True, today=date(2026, 11, 13)))
+        m = md.Model(flows, triggers, md.Settings(today=date(2026, 11, 13)))
         v, p = uc.validate(raw, uf.build_facts(m))
         self.assertIn(["tests"], [x["parts"] for x in v["programmes"]])
         self.assertTrue(any("not in any programme" in x for x in p))
@@ -165,7 +165,7 @@ class CompactSchemaTest(unittest.TestCase):
             p["statements"] = [dict(s, section="story") for s in p.pop("story")] + [dict(s, section="watch") for s in p.pop("watch")]
         flows = json.loads((FIX / "flows.json").read_text())
         triggers = json.loads((FIX / "triggers.json").read_text())
-        m = md.Model(flows, triggers, md.Settings(scope_all=True, today=date(2026, 11, 13)))
+        m = md.Model(flows, triggers, md.Settings(today=date(2026, 11, 13)))
         v, _ = uc.validate(raw, uf.build_facts(m))
         tips = next(u for u in v["use_cases"] if u["id"] == "weekly-tips")
         self.assertEqual((len(tips["story"]), len(tips["how_it_works"]), len(tips["watch"])), (3, 1, 1))
@@ -285,10 +285,10 @@ class ModelNamedFromAnswer(unittest.TestCase):
         client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(stream=lambda **kw: Ctx())))
         got = uc.call_claude(facts(), client)
         self.assertEqual(got["_meta"]["model"], "claude-opus-4-8")
-        m = model(scope_all=True)
+        m = model()
         f = uf.build_facts(m)
         v, p = uc.validate(got, f)
-        self.assertIn("claude-opus-4-8", ru.render_programme_page(m, f, v, p, m.st))
+        self.assertIn("claude-opus-4-8", ru.render_org_map(m, f, v, p))
 
 
 class FactsCached(unittest.TestCase):

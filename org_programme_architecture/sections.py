@@ -1,9 +1,9 @@
-"""The sections under a graph: shared resources, other flows, tagging gaps and context notes."""
+"""The sections under a graph: shared resources, other flows and context notes."""
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 from cards import node_chips
-from text import esc, join, names, plural, typo
+from text import esc, join, plural, typo
 
 
 def _used_by(m, us, limit=5):
@@ -48,18 +48,13 @@ def shared_resources(m):
 
 
 def strip_section(m):
-    """Flows in scope that are not on the graph, untagged flows that change groups the graph uses,
-    and flows named in triggers or starts but missing from the export: one row each."""
+    """Flows that are not on the graph, and flows named in triggers or starts but missing from the
+    export: one row each."""
     def what(u):
         chips = [c for c, _ in node_chips(m, u)]
         return join(chips, 6) or "nothing that leaves the bot"
 
-    rows = [(m.name(u), m.tag_label(u) or "No tag", what(u), "No link to the graph") for u in m.strip]
-    scope_groups = {g for u in m.scope for _, gs, _ in m.sum[u]["moves"] for g in gs}
-    scope_groups |= {g for u in m.scope for t in m.active_trig.get(u, []) + m.earlier_trig.get(u, []) for g in names(t.get("groups"))}
-    matter = [u for u in m.flows if u not in m.scope and not m.tagged(u)
-              and any(set(gs) & scope_groups for _, gs, _ in m.sum[u]["moves"])]
-    rows += [(m.name(u), m.tag_label(u) or "No tag", what(u), "Changes groups the graph uses") for u in sorted(matter, key=m.name)]
+    rows = [(m.name(u), m.tag_label(u) or "No tag", what(u), "Not on the graph") for u in m.strip]
     for n, ts in sorted(m.missing_trig.items()):
         rows.append((n, "", f"{plural(len(ts), 'trigger')}", "Named in triggers, not in the export"))
     for n, us in sorted(m.missing_targets.items()):
@@ -67,47 +62,6 @@ def strip_section(m):
     if not rows:
         return ""
     return f'<section class="sect">{_table("Other flows in the account", rows, ("Flow", "Tag", "What it does", "Why it is listed"))}</section>'
-
-
-def name_prefix(names_):
-    for k in (2, 1):
-        # re.split with a capture group keeps the separators: ['2025', '_', 'Pilot', '_', ...]
-        pieces = [re.split(r"([_ ])", n) for n in names_]
-        c = Counter("".join(p[:2 * k - 1]) for p in pieces if len(p) > 2 * k - 1)
-        if c:
-            p, n = c.most_common(1)[0]
-            if n >= 2 and n * 2 >= len(names_):
-                return p
-    return ""
-
-
-def tagging_gaps(m):
-    parts = []
-    untagged = sorted(m.name(u) for u in m.scope if not m.tagged(u))
-    if untagged and m.st.tag:
-        parts.append(f"{join(untagged, 10)} {'is' if len(untagged) == 1 else 'are'} in scope without the {m.st.tag} tag.")
-    linked = sorted(m.name(u) for u in m.linked_in)
-    if linked and m.st.tag:
-        parts.append(f"{join(linked, 10)} {'starts' if len(linked) == 1 else 'start'} a flow on the map without the {m.st.tag} tag, "
-                     f"so {'it was' if len(linked) == 1 else 'they were'} added. Check whether the tag was missed; "
-                     f"{'its' if len(linked) == 1 else 'their'} starts of flows outside the map are not drawn.")
-    via_group = sorted(m.name(u) for u in m.view.linked_group if not m.tagged(u))
-    if via_group and m.st.tag:
-        parts.append(f"{join(via_group, 10)} {'adds' if len(via_group) == 1 else 'add'} contacts to a group that a schedule on the map sends to, "
-                     f"so {'it decides' if len(via_group) == 1 else 'they decide'} who that schedule reaches; check whether the {m.st.tag} tag was missed.")
-    tagged_names = [m.name(u) for u in m.flows if m.tagged(u)]
-    prefix = name_prefix(tagged_names)
-    if prefix:
-        outside = sorted(m.name(u) for u in m.flows if not m.tagged(u) and m.name(u).startswith(prefix))
-        off = sorted(n for n in tagged_names if not n.startswith(prefix))
-        if outside:
-            verb = "shares" if len(outside) == 1 else "share"
-            parts.append(f"Guess from names: {join(outside, 8)} {verb} the {prefix} prefix but {'lacks' if len(outside) == 1 else 'lack'} the tag. No links are drawn for this guess.")
-        if off:
-            parts.append(f"Guess from names: {join(off, 8)} carry the tag without the {prefix} prefix, so a search by name misses them.")
-    if not parts:
-        return ""
-    return f'<section class="sect gaps"><h2>Tagging gaps</h2><p>{esc(typo(" ".join(parts)))}</p></section>'
 
 
 def context_section(notes):

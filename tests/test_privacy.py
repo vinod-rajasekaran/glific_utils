@@ -3,12 +3,10 @@ import json
 import unicodedata
 import unittest
 
-from tests.helpers import TODAY, SEEDS, by_name, hostile, load, model  # also puts org_programme_architecture on sys.path
+from tests.helpers import SEEDS, by_name, groups_page, hostile, load, model  # also puts org_programme_architecture on sys.path
 import flow_reading as fr  # noqa: E402
-import model as md  # noqa: E402
 import privacy as pv  # noqa: E402
 import programme_facts as uf  # noqa: E402
-import render_graph as ra  # noqa: E402
 
 
 class CleanTextTest(unittest.TestCase):
@@ -79,9 +77,9 @@ class DevanagariCut(unittest.TestCase):
 class StructuralFieldsMasked(unittest.TestCase):
     def test_facts_and_page_have_no_planted_pii(self):
         flows, triggers = hostile()
-        m = model(flows, triggers, scope_all=True)
+        m = model(flows, triggers)
         text = json.dumps(uf.build_facts(m), ensure_ascii=False)
-        page, _ = ra.render_html(flows, triggers, md.Settings(today=TODAY))
+        page = groups_page(flows, triggers)
         for seed in SEEDS[:6]:
             self.assertNotIn(seed, text, seed)
             self.assertNotIn(seed, page, seed)
@@ -122,7 +120,7 @@ class OverMasking(unittest.TestCase):
         host = "volunteer-digital-onboarding-238853749053.europe-west1.run.app"
         self.assertEqual(pv.clean_text(f"calls {host} (validate)", set()), f"calls {host} (validate)")
         self.assertIn(host, fr.webhook_desc({"url": f"https://{host}/validate"}))
-        m = model(scope_all=True)
+        m = model()
         self.assertNotIn("[secret]", json.dumps(uf.build_facts(m)))
 
 
@@ -155,6 +153,6 @@ class MaskingRegressions(unittest.TestCase):
         by_name(flows, "Survey save")["nodes"][1]["actions"][0]["contacts"].append({"uuid": "c-2", "name": "Priya Sharma"})
         by_name(flows, "Profile")["nodes"][2]["actions"][0]["groups"] = [{"uuid": "g1", "name": "Priya Sharma follow-ups"}]
         triggers[-1]["groups"] = ["Priya Sharma follow-ups"]
-        m = model(flows, triggers, scope_all=True)
+        m = model(flows, triggers)
         self.assertNotIn("Priya", json.dumps(uf.build_facts(m)))
         self.assertTrue(any(info["triggers"] and info["adds"] for info in m.view.group_nodes.values()))   # still joined up

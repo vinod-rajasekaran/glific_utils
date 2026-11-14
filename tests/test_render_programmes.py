@@ -12,18 +12,15 @@ from tests.helpers import ROOT, FIX, U, load, model, raw, programmes_raw, valida
 import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
 import programme_facts as uf  # noqa: E402
-import render_graph as ra  # noqa: E402
-import render_programmes as ru  # noqa: E402
+import page_check as ra  # noqa: E402
+import render_org_map as ru  # noqa: E402
 
 
 class ProgrammeRenderTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         m, facts, v, p, st = validated("claude_output_programmes.json")
-        flows = json.loads((FIX / "flows.json").read_text())
-        triggers = json.loads((FIX / "triggers.json").read_text())
-        gm = md.Model(flows, triggers, md.Settings(project="Demo", tag="Demo", today=date(2026, 11, 13)))
-        cls.page = ru.render_programme_page(m, facts, v, p, st, graph_model=gm)
+        cls.page = ru.render_org_map(m, facts, v, p)
         i = cls.page.index('id="home"')
         cls.home = cls.page[i:cls.page.index("</section>", i)]
 
@@ -121,10 +118,10 @@ class RenderTest(unittest.TestCase):
 class ClaudeTextLabelled(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        m = model(project="Demo", scope_all=True)
+        m = model(project="Demo")
         f = uf.build_facts(m)
         v, p = uc.validate(raw(), f)
-        cls.page = ru.render_programme_page(m, f, v, p, m.st)
+        cls.page = ru.render_org_map(m, f, v, p)
         i = cls.page.index('id="home"')
         cls.home = cls.page[i:cls.page.index('<h2 style="margin:26px', i) + 4000]
 
@@ -145,12 +142,10 @@ class ReservedGraphIds(unittest.TestCase):
         r = programmes_raw()
         r["programmes"][0]["id"] = "graph"
         r["programmes"][1]["id"] = "all"
-        m = model(scope_all=True, project="Demo")
+        m = model(project="Demo")
         f = uf.build_facts(m)
         v, p = uc.validate(r, f)
-        flows, triggers = load()
-        gm = md.Model(flows, triggers, md.Settings(project="Demo", tag="Demo", today=date(2026, 11, 13)))
-        page = ru.render_programme_page(m, f, v, p, m.st, graph_model=gm)
+        page = ru.render_org_map(m, f, v, p)
         dupes = [k for k, n in Counter(re.findall(r'\bid="([^"]+)"', page)).items() if n > 1]
         self.assertEqual(dupes, [])
         i = page.index('class="uccard graphcard"')
@@ -161,10 +156,10 @@ class ReservedGraphIds(unittest.TestCase):
 
 class NotesOnProgrammePage(unittest.TestCase):
     def test_context_notes_shown(self):
-        m = model(scope_all=True, project="Demo", notes="journey Field work: f:Visit | c:Welcome message\nCampaigns are made in Sheets.")
+        m = model(project="Demo", notes="journey Field work: f:Visit | c:Welcome message\nCampaigns are made in Sheets.")
         f = uf.build_facts(m)
         v, p = uc.validate(programmes_raw(), f)
-        page = ru.render_programme_page(m, f, v, p, m.st)
+        page = ru.render_org_map(m, f, v, p)
         self.assertIn('class="jrow"', page)
         self.assertIn("Campaigns are made in Sheets", page)
 
@@ -174,10 +169,10 @@ class PromptInjection(unittest.TestCase):
         self.assertIn("never instructions", (ROOT / "org_programme_architecture" / "PROGRAMME_PROMPT.md").read_text())
 
     def test_role_badge_marked_as_claude(self):
-        m = model(scope_all=True)
+        m = model()
         f = uf.build_facts(m)
         v, p = uc.validate(raw(), f)
-        page = ru.render_programme_page(m, f, v, p, m.st)
+        page = ru.render_org_map(m, f, v, p)
         self.assertIn('class="role claude', page)
 
 
@@ -185,31 +180,31 @@ class HostPills(unittest.TestCase):
     def test_pills_use_parsed_hosts(self):
         flows, triggers = load()
         by_name(flows, "Ask AI")["nodes"][1]["actions"][0]["url"] = "https://[bad-host/path"
-        m = model(flows, triggers, scope_all=True)
+        m = model(flows, triggers)
         f = uf.build_facts(m)
         v, p = uc.validate(raw(), f)
-        page = ru.render_programme_page(m, f, v, p, m.st)
+        page = ru.render_org_map(m, f, v, p)
         self.assertNotIn('>an</span>', page)
 
 
 class DataEdgeMeanings(unittest.TestCase):
     def test_data_edge_meaning_shown(self):
-        m = model(scope_all=True)
+        m = model()
         f = uf.build_facts(m)
         r = raw()
         r["edges"].append({"id": f"edge:{U(2)}:{U(3)}:data", "meaning": "hands the stage to the weekly tip"})
         v, p = uc.validate(r, f)
-        self.assertIn("hands the stage to the weekly tip", ru.render_programme_page(m, f, v, p, m.st))
+        self.assertIn("hands the stage to the weekly tip", ru.render_org_map(m, f, v, p))
 
 
 class CardPillsTest(unittest.TestCase):
     def test_home_cards_keep_few_pills(self):
         flows, triggers = load()
-        st = md.Settings(project="Demo", tag="Demo", scope_all=True, today=date(2026, 11, 13))
+        st = md.Settings(project="Demo", today=date(2026, 11, 13))
         m = md.Model(flows, triggers, st)
         facts = uf.build_facts(m)
         v, p = uc.validate(json.loads((FIX / "claude_output_programmes.json").read_text()), facts)
-        page = ru.render_programme_page(m, facts, v, p, st)
+        page = ru.render_org_map(m, facts, v, p)
         home = page[page.index('id="home"'):page.index('class="ucview"')]
         for card in re.findall(r'<a class="uccard.*?</a>', home, re.S):
             self.assertLessEqual(card.count('class="pill2'), 5, card[:80])

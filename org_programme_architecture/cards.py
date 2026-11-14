@@ -90,16 +90,11 @@ def flow_rows(m, u, view=None):
 
 def tag_pill(m, u):
     label = m.tag_label(u)
-    if label and m.tagged(u):
-        return f'<span class="tag">{esc(label)}</span>'
-    if label:
-        return f'<span class="tag no">Tag: {esc(label)}</span>'
-    return '<span class="tag no">No tag</span>'
+    return f'<span class="tag">{esc(label)}</span>' if label else '<span class="tag no">No tag</span>'
 
 
 def flow_card(m, u, view=None):
-    cls = "card" if m.tagged(u) else "card untagged"
-    return (f'<article class="{cls}"><div class="ch"><h3>{esc(m.name(u))}</h3>{tag_pill(m, u)}</div>'
+    return (f'<article class="card"><div class="ch"><h3>{esc(m.name(u))}</h3>{tag_pill(m, u)}</div>'
             f'{flow_rows(m, u, view)}</article>')
 
 

@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "org_programme_architecture"))
 import model as md  # noqa: E402
 import programme_claude as uc  # noqa: E402
 import programme_facts as uf  # noqa: E402
-import render_programmes as ru  # noqa: E402
+import render_org_map as ru  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 TODAY = date(2026, 11, 13)
@@ -36,7 +36,7 @@ def model(flows=None, triggers=None, org=None, **kw):
 
 def facts():
     """The facts for the whole made-up org."""
-    return uf.build_facts(model(scope_all=True))
+    return uf.build_facts(model())
 
 
 def raw():
@@ -51,7 +51,7 @@ def programmes_raw():
 
 def validated(name="claude_output.json"):
     """(model, facts, validated answer, problems, settings) for a saved answer."""
-    st = md.Settings(project="Demo", scope_all=True, today=TODAY)
+    st = md.Settings(project="Demo", today=TODAY)
     m = md.Model(*load(), st)
     f = uf.build_facts(m)
     v, p = uc.validate(json.loads((FIX / name).read_text()), f)
@@ -60,11 +60,18 @@ def validated(name="claude_output.json"):
 
 def render_demo():
     """(programme page, validated answer) for the first saved answer."""
-    st = md.Settings(project="Demo bot", scope_all=True, today=TODAY)
+    st = md.Settings(project="Demo bot", today=TODAY)
     m = md.Model(*load(), st)
     f = uf.build_facts(m)
     v, p = uc.validate(raw(), f)
-    return ru.render_programme_page(m, f, v, p, st), v
+    return ru.render_org_map(m, f, v, p), v
+
+
+def groups_page(flows=None, triggers=None, org=None, reason="it was run with --no-claude", **kw):
+    """The page built without Claude, for the made-up org (or the given flows and triggers)."""
+    from grouping import group_answer
+    m = model(flows, triggers, org=org, **kw)
+    return ru.render_org_map(m, uf.build_facts(m), group_answer(m, reason))
 
 
 def uid(m, name):

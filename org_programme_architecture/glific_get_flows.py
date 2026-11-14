@@ -270,7 +270,7 @@ def fetch_flows(token):
     for label, n in tag_counts.most_common():
         print(f"  {label}: {n}", file=sys.stderr)
 
-    all_flows = active_flows  # every active flow; the flow map narrows by tag later
+    all_flows = active_flows  # every active flow
     print(f"Pulling all {len(all_flows)} active flows\n", file=sys.stderr)
 
     for flow in all_flows:

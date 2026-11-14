@@ -59,7 +59,7 @@ class SizeBudget(unittest.TestCase):
 
 class MissingGroups(unittest.TestCase):
     def test_groups_from_routers_and_inactive_triggers(self):
-        names = {g["name"] for g in uf.build_facts(model(project="Demo", scope_all=True))["groups"]}
+        names = {g["name"] for g in uf.build_facts(model(project="Demo"))["groups"]}
         self.assertIn("Staff", names)
         self.assertIn("Old cohort", names)
 
@@ -68,7 +68,7 @@ class BadWebhookUrl(unittest.TestCase):
     def test_build_facts_survives_bad_url(self):
         flows, triggers = load()
         flows[3]["nodes"][1]["actions"][0]["url"] = "https://[bad-host/path"
-        m = md.Model(flows, triggers, md.Settings(scope_all=True, today=date(2026, 11, 13)))
+        m = md.Model(flows, triggers, md.Settings(today=date(2026, 11, 13)))
         uf.build_facts(m)
 
 
@@ -88,12 +88,12 @@ class FactsUseMaskedNames(unittest.TestCase):
         w = by_name(flows, "Welcome")
         w["keywords"] = ["hi", "call9876500111", "9876500112"]
         w["nodes"][0]["router"]["cases"][0]["arguments"] = ["g9", "Staff 9876500113"]
-        text = json.dumps(uf.build_facts(model(flows, triggers, scope_all=True)), ensure_ascii=False)
+        text = json.dumps(uf.build_facts(model(flows, triggers)), ensure_ascii=False)
         for seed in ("9876500112", "9876500113"):
             self.assertNotIn(seed, text, seed)
 
     def test_facts_reuse_model_staff(self):
-        m = model(scope_all=True)
+        m = model()
         m.staff = {"Welcome"}                 # a staff name the export does not contain
         f = uf.build_facts(m)
         self.assertNotIn("Welcome to the Healthy", json.dumps(f))
@@ -101,7 +101,7 @@ class FactsUseMaskedNames(unittest.TestCase):
 
 class SettingsFactsTest(unittest.TestCase):
     def test_facts_setting_start(self):
-        f = uf.build_facts(model(org=SETTINGS, scope_all=True))
+        f = uf.build_facts(model(org=SETTINGS))
         old = next(x for x in f["flows"] if x["name"] == "Old draft")
         self.assertEqual([s["kind"] for s in old["starts_from"]], ["setting"])
         self.assertIn("default flow", old["starts_from"][0]["text"].lower())
