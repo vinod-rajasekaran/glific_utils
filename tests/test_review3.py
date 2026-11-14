@@ -273,3 +273,14 @@ class OverMasking(unittest.TestCase):
         self.assertIn(host, ra.webhook_desc({"url": f"https://{host}/validate"}))
         m = model(scope_all=True)
         self.assertNotIn("[secret]", json.dumps(uf.build_facts(m)))
+
+
+class EvidenceTypes(unittest.TestCase):
+    def test_string_evidence_is_not_read_letter_by_letter(self):
+        r = raw()
+        r["flows"][0]["evidence"] = f"msg:{U(1)}:1"
+        r["org_summary"]["evidence"] = "sticky:x:1"
+        v, problems = uc.validate(r, facts())
+        self.assertEqual(next(f for f in v["flows"] if f["id"] == U(1))["evidence"], [])
+        self.assertEqual(v["org_summary"]["evidence"], [])
+        self.assertFalse(any("IDs m, s" in p or "IDs s, t" in p for p in problems), problems)

@@ -148,6 +148,11 @@ def _choice(value, allowed, default):
     return value if value in allowed else default
 
 
+def _ids(value):
+    """The strings in a list of IDs from Claude's answer; anything that is not a list gives none."""
+    return [x for x in value if isinstance(x, str)] if isinstance(value, list) else []
+
+
 def _items(value):
     """The dicts in a list from Claude's answer, skipping anything else."""
     return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
@@ -170,8 +175,7 @@ class _Checker:
         for s in items if isinstance(items, list) else []:
             if not isinstance(s, dict) or not str(s.get("text") or "").strip():
                 continue
-            refs = [x for x in s.get("refs") or [] if isinstance(x, str)] if isinstance(s.get("refs"), list) else []
-            evidence = [x for x in s.get("evidence") or [] if isinstance(x, str)] if isinstance(s.get("evidence"), list) else []
+            refs, evidence = _ids(s.get("refs")), _ids(s.get("evidence"))
             bad = [x for x in refs if x not in self.known_refs] + [x for x in evidence if x not in self.evidence_ids]
             if bad:
                 self.problems.append(f"{where}: unknown IDs {', '.join(map(str, bad[:5]))} in \"{str(s['text'])[:60]}\"")
@@ -191,7 +195,7 @@ class _Checker:
         for u in _items(out["use_cases"]):
             name = str(u.get("name") or "Unnamed use case")
             flows = []
-            for fid in u.get("flows", []):
+            for fid in _ids(u.get("flows")):
                 if fid not in self.names:
                     self.problems.append(f"use case {name}: unknown flow ID {fid}")
                 elif fid in owner:
@@ -233,10 +237,10 @@ class _Checker:
             if f is None:
                 self.problems.append(f"flows: no purpose given for {self.names[fid]}")
                 f = {"purpose": "", "role": "unknown", "evidence": [], "confidence": "guess"}
-            bad = [x for x in f.get("evidence", []) if x not in self.evidence_ids]
+            bad = [x for x in _ids(f.get("evidence")) if x not in self.evidence_ids]
             if bad:
                 self.problems.append(f"flows: unknown evidence IDs {', '.join(map(str, bad[:5]))} for {self.names[fid]}")
-            ev = [x for x in f.get("evidence", []) if x in self.evidence_ids]
+            ev = [x for x in _ids(f.get("evidence")) if x in self.evidence_ids]
             conf = _choice(f.get("confidence"), CONFIDENCE, "guess")
             if not ev and f.get("purpose") and conf != "guess":
                 self.problems.append(f"flows: the purpose of {self.names[fid]} cites no evidence in the facts, so it is shown as a guess")
@@ -264,10 +268,10 @@ class _Checker:
 
     def org_summary(self, out):
         summary = out.get("org_summary") if isinstance(out.get("org_summary"), dict) else {}
-        bad = [x for x in summary.get("evidence", []) if x not in self.evidence_ids]
+        bad = [x for x in _ids(summary.get("evidence")) if x not in self.evidence_ids]
         if bad:
             self.problems.append(f"org summary: unknown evidence IDs {', '.join(map(str, bad[:5]))}")
-        ev = [x for x in summary.get("evidence", []) if x in self.evidence_ids]
+        ev = [x for x in _ids(summary.get("evidence")) if x in self.evidence_ids]
         if not ev and summary.get("text") and summary.get("confidence") != "guess":
             self.problems.append("org summary: cites no evidence in the facts, so it is shown as a guess")
         return {"text": str(summary.get("text") or ""), "evidence": ev,
@@ -284,7 +288,7 @@ class _Checker:
         for p in _items(out["programmes"]):
             name = str(p.get("name") or "Unnamed programme")
             parts = []
-            for pid in p.get("parts", []) if isinstance(p.get("parts"), list) else []:
+            for pid in _ids(p.get("parts")):
                 pid = slug_of.get(str(pid), pid)
                 if pid not in by_id:
                     self.problems.append(f"programme {name}: unknown use case ID {pid}")
