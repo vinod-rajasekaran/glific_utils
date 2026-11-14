@@ -284,3 +284,20 @@ class EvidenceTypes(unittest.TestCase):
         self.assertEqual(next(f for f in v["flows"] if f["id"] == U(1))["evidence"], [])
         self.assertEqual(v["org_summary"]["evidence"], [])
         self.assertFalse(any("IDs m, s" in p or "IDs s, t" in p for p in problems), problems)
+
+
+class FactsUseMaskedNames(unittest.TestCase):
+    def test_keywords_and_router_groups_masked(self):
+        flows, triggers = load()
+        w = by_name(flows, "Welcome")
+        w["keywords"] = ["hi", "call9876500111", "9876500112"]
+        w["nodes"][0]["router"]["cases"][0]["arguments"] = ["g9", "Staff 9876500113"]
+        text = json.dumps(uf.build_facts(model(flows, triggers, scope_all=True)), ensure_ascii=False)
+        for seed in ("9876500112", "9876500113"):
+            self.assertNotIn(seed, text, seed)
+
+    def test_facts_reuse_model_staff(self):
+        m = model(scope_all=True)
+        m.staff = {"Welcome"}                 # a staff name the export does not contain
+        f = uf.build_facts(m)
+        self.assertNotIn("Welcome to the Healthy", json.dumps(f))

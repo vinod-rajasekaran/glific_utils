@@ -10,7 +10,7 @@ the model, never from Claude.
 import json
 from collections import Counter
 
-from privacy import host_of, clean_text, staff_names  # noqa: F401  (re-exported for callers and tests)
+from privacy import clean_text, host_of, mask, staff_names  # noqa: F401  (re-exported for callers and tests)
 
 from schedules import schedule_text
 from text import join, names, times
@@ -103,7 +103,7 @@ class _Facts:
 
     def __init__(self, m):
         self.m = m
-        self.staff = staff_names(m.flows)
+        self.staff = m.staff
         self.order = sorted(m.scope, key=m.name_key)
         self.edges, self.groups, self.triggers, self.hosts = [], {}, [], set()
 
@@ -153,15 +153,15 @@ class _Facts:
                     self.add_edge(f"edge:group:{g}:{tid}:schedule", f"group:{g}", tid, "schedule")
 
     def starts_from(self, u):
-        m, f = self.m, self.m.flows[u]
+        m = self.m
         out = []
         for t in m.active_trig.get(u, []):
             gs = join(names(t.get("groups")) + names(t.get("waGroups")), 4) or "no group"
             out.append({"kind": "trigger", "ref": f"trigger:{t.get('id')}", "text": f"{schedule_text(t, m.tz, [])}, to {gs}"})
         for _, text in m.setting_starts.get(u, []):
             out.append({"kind": "setting", "ref": "", "text": text})
-        if f.get("keywords"):
-            out.append({"kind": "keyword", "ref": "", "text": "a contact sends " + join(f["keywords"], 20, "or")})
+        if m.keywords(u):
+            out.append({"kind": "keyword", "ref": "", "text": "a contact sends " + join(m.keywords(u), 20, "or")})
         for c, n in sorted(m.callers.get(u, {}).items(), key=lambda cn: m.name(cn[0]).lower()):
             out.append({"kind": "flow", "ref": c, "text": f"{m.name(c)} enters it{times(n)}"})
         return out or [{"kind": "none", "ref": "", "text": "No trigger, keyword or flow in the export starts it"}]
@@ -192,7 +192,7 @@ class _Facts:
         for n in self.m.flows[u].get("nodes") or []:
             for case in (n.get("router") or {}).get("cases") or []:
                 if case.get("type") == "has_group" and case.get("arguments"):
-                    rec = self.group(str(case["arguments"][-1]))
+                    rec = self.group(mask(str(case["arguments"][-1])))   # masked like every group name
                     if u not in rec["checked_by"]:
                         rec["checked_by"].append(u)
             for a in n.get("actions") or []:
@@ -210,7 +210,7 @@ class _Facts:
             "id": u,
             "name": m.name(u),
             "tag": m.tag_label(u),
-            "keywords": list(f.get("keywords") or []),
+            "keywords": m.keywords(u),
             "starts_from": starts_from,
             "leads_to": leads_to,
             "touches": _touches(m, u),
