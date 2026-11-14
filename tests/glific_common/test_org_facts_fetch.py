@@ -55,6 +55,8 @@ class FetchTest(unittest.TestCase):
         self.assertEqual(welcome["edges"][0], {"from": "n1", "exit": "e1", "to": "n2"})
         self.assertNotIn("SECRET", json.dumps(welcome))
         self.assertEqual((broken["nodes"], broken["edges"]), ([], []))   # a failed export leaves the flow empty
+        self.assertEqual(broken["export_error"], "gone")
+        self.assertNotIn("export_error", welcome)
         self.assertEqual(triggers[0]["schedule"], "weekly on Mon from 2026-01-01T04:30:00Z")
         self.assertEqual(org["name"], "Demo org")
 

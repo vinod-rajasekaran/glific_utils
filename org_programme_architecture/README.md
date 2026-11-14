@@ -22,7 +22,7 @@ Either way the full flow graph is one more view on the page: how every flow star
 | [`page_check.py`](page_check.py) | Checks the finished page: tags balance, no em dashes | |
 | [`assets/`](assets/) | Page markup, styles and scripts, inlined into the page at build time | |
 
-Nothing is tied to a particular org: every active flow in the account is read.
+Nothing is tied to a particular org: every active flow in the account is read. A flow Glific cannot export (for example because it enters a flow that was deleted) is listed under **Not exported** on the page and in the run's findings, with Glific's reason, instead of looking empty.
 
 Shared with the other features, in [`glific_common/`](../glific_common/):
 
