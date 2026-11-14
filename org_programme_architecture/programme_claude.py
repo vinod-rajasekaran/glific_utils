@@ -124,168 +124,191 @@ def _section(obj, name):
 
 
 def validate(out, facts):
-    """Return (cleaned output, problems). Raises ProgrammeError when nothing usable is left."""
+    """Return (cleaned output, problems). Raises ProgrammeError when nothing usable is left.
+
+    Every ID Claude gives must be in the facts; anything else is removed and reported."""
     if not isinstance(out, dict) or not isinstance(out.get("use_cases"), list):
         raise ProgrammeError("Claude's answer has no list of use cases")
-    flow_ids = [f["id"] for f in facts["flows"]]
-    names = {f["id"]: f["name"] for f in facts["flows"]}
-    known_refs = set(flow_ids) | {g["id"] for g in facts["groups"]} | {t["id"] for t in facts["triggers"]}
-    edge_ids = {e["id"] for e in facts["edges"]}
-    evidence_ids = known_refs | edge_ids | {e["id"] for f in facts["flows"] for e in f["excerpts"]}
-    problems = []
+    c = _Checker(facts)
+    use_cases, slug_of = c.use_cases(out)
+    if not use_cases:
+        raise ProgrammeError("none of Claude's use cases refer to flows in the facts")
+    # Checked in this order so the problem list reads the same way every time
+    flows, not_placed = c.flows(out, use_cases)
+    edges, systems = c.edges(out), c.systems(out)
+    org_summary = c.org_summary(out)
+    programmes = c.programmes(out, use_cases, slug_of)
+    meta = out.get("_meta") if isinstance(out.get("_meta"), dict) else {}
+    return ({"model": meta.get("model") if isinstance(meta.get("model"), str) else MODEL,
+             "org_summary": org_summary, "programmes": programmes, "use_cases": use_cases,
+             "flows": flows, "not_placed": not_placed, "edges": edges, "systems": systems}, c.problems)
 
-    def statements(items, where):
+
+def _choice(value, allowed, default):
+    return value if value in allowed else default
+
+
+def _items(value):
+    """The dicts in a list from Claude's answer, skipping anything else."""
+    return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
+
+
+class _Checker:
+    """Checks each part of Claude's answer against the facts, collecting problems as it goes."""
+
+    def __init__(self, facts):
+        self.facts = facts
+        self.flow_ids = [f["id"] for f in facts["flows"]]
+        self.names = {f["id"]: f["name"] for f in facts["flows"]}
+        self.known_refs = set(self.flow_ids) | {g["id"] for g in facts["groups"]} | {t["id"] for t in facts["triggers"]}
+        self.edge_ids = {e["id"] for e in facts["edges"]}
+        self.evidence_ids = self.known_refs | self.edge_ids | {e["id"] for f in facts["flows"] for e in f["excerpts"]}
+        self.problems = []
+
+    def statements(self, items, where):
         kept = []
         for s in items if isinstance(items, list) else []:
             if not isinstance(s, dict) or not str(s.get("text") or "").strip():
                 continue
             refs = [x for x in s.get("refs") or [] if isinstance(x, str)] if isinstance(s.get("refs"), list) else []
             evidence = [x for x in s.get("evidence") or [] if isinstance(x, str)] if isinstance(s.get("evidence"), list) else []
-            bad = [x for x in refs if x not in known_refs] + [x for x in evidence if x not in evidence_ids]
+            bad = [x for x in refs if x not in self.known_refs] + [x for x in evidence if x not in self.evidence_ids]
             if bad:
-                problems.append(f"{where}: unknown IDs {', '.join(map(str, bad[:5]))} in \"{str(s['text'])[:60]}\"")
+                self.problems.append(f"{where}: unknown IDs {', '.join(map(str, bad[:5]))} in \"{str(s['text'])[:60]}\"")
             # Keep only checked fields: text as a string, known IDs, and a confidence from the list
-            conf = s.get("confidence") if s.get("confidence") in CONFIDENCE else "guess"
-            s = {"text": str(s["text"]), "refs": [x for x in refs if x in known_refs],
-                 "evidence": [x for x in evidence if x in evidence_ids], "confidence": conf}
+            s = {"text": str(s["text"]), "refs": [x for x in refs if x in self.known_refs],
+                 "evidence": [x for x in evidence if x in self.evidence_ids], "confidence": _choice(s.get("confidence"), CONFIDENCE, "guess")}
             if not s["evidence"] and s["confidence"] != "guess":
-                problems.append(f"{where}: dropped \"{str(s['text'])[:60]}\" because none of its evidence is in the facts")
+                self.problems.append(f"{where}: dropped \"{str(s['text'])[:60]}\" because none of its evidence is in the facts")
                 continue
             kept.append(s)
         return kept
 
-    owner, use_cases, taken = {}, [], set()
-    slug_of = {}      # Claude's use-case id -> the slug it is shown under, so programme parts can follow it
-    for u in out["use_cases"]:
-        if not isinstance(u, dict):
-            continue
-        name = str(u.get("name") or "Unnamed use case")
+    def use_cases(self, out):
+        """Use cases with at least one flow; each flow in one use case at most. Returns (use cases,
+        Claude's id -> the slug it is shown under, so programme parts can follow it)."""
+        owner, use_cases, taken, slug_of = {}, [], set(), {}
+        for u in _items(out["use_cases"]):
+            name = str(u.get("name") or "Unnamed use case")
+            flows = []
+            for fid in u.get("flows", []):
+                if fid not in self.names:
+                    self.problems.append(f"use case {name}: unknown flow ID {fid}")
+                elif fid in owner:
+                    self.problems.append(f"use case {name}: {self.names[fid]} is already in use case {owner[fid]}; a flow has one primary use case")
+                elif fid in flows:
+                    self.problems.append(f"use case {name}: {self.names[fid]} is listed twice")
+                else:
+                    flows.append(fid)
+            if not flows:
+                self.problems.append(f"use case {name} was dropped because none of its flows are in the facts")
+                continue
+            uid = _slug(u.get("id") or name, taken)
+            slug_of.setdefault(str(u.get("id") or name), uid)
+            slug_of.setdefault(uid, uid)
+            for fid in flows:
+                owner[fid] = name
+            use_cases.append({
+                "id": uid, "name": name, "summary": str(u.get("summary") or ""),
+                "kind": _choice(u.get("kind"), KINDS, "journey"), "flows": flows,
+                "story": self.statements(_section(u, "story"), f"{name}, story"),
+                "how_it_works": self.statements(_section(u, "how_it_works"), f"{name}, how it works"),
+                "watch": self.statements(_section(u, "watch"), f"{name}, watch"),
+                "confidence": _choice(u.get("confidence"), CONFIDENCE, "guess"),
+            })
+        return use_cases, slug_of
+
+    def flows(self, out, use_cases):
+        """A purpose and role for every flow in the facts, in facts order. Returns (flows, not placed)."""
+        uc_of = {fid: u["id"] for u in use_cases for fid in u["flows"]}
+        given = {}
+        for f in _items(out.get("flows")):
+            if f.get("id") not in self.names:
+                self.problems.append(f"flows: unknown flow ID {f.get('id')}")
+            elif f["id"] not in given:
+                given[f["id"]] = f
         flows = []
-        for fid in u.get("flows", []):
-            if fid not in names:
-                problems.append(f"use case {name}: unknown flow ID {fid}")
-            elif fid in owner:
-                problems.append(f"use case {name}: {names[fid]} is already in use case {owner[fid]}; a flow has one primary use case")
-            elif fid in flows:
-                problems.append(f"use case {name}: {names[fid]} is listed twice")
+        for fid in self.flow_ids:
+            f = given.get(fid)
+            if f is None:
+                self.problems.append(f"flows: no purpose given for {self.names[fid]}")
+                f = {"purpose": "", "role": "unknown", "evidence": [], "confidence": "guess"}
+            bad = [x for x in f.get("evidence", []) if x not in self.evidence_ids]
+            if bad:
+                self.problems.append(f"flows: unknown evidence IDs {', '.join(map(str, bad[:5]))} for {self.names[fid]}")
+            ev = [x for x in f.get("evidence", []) if x in self.evidence_ids]
+            conf = _choice(f.get("confidence"), CONFIDENCE, "guess")
+            if not ev and f.get("purpose") and conf != "guess":
+                self.problems.append(f"flows: the purpose of {self.names[fid]} cites no evidence in the facts, so it is shown as a guess")
+            flows.append({"id": fid, "purpose": str(f.get("purpose") or ""), "role": _choice(f.get("role"), ROLES, "unknown"),
+                          "use_case": uc_of.get(fid, ""), "evidence": ev, "confidence": conf if ev else "guess"})
+        return flows, [fid for fid in self.flow_ids if fid not in uc_of]
+
+    def edges(self, out):
+        edges = []
+        for e in _items(out.get("edges")):
+            if e.get("id") in self.edge_ids and str(e.get("meaning") or "").strip():
+                edges.append({"id": e["id"], "meaning": str(e["meaning"])})
             else:
-                flows.append(fid)
-        if not flows:
-            problems.append(f"use case {name} was dropped because none of its flows are in the facts")
-            continue
-        uid = _slug(u.get("id") or name, taken)
-        slug_of.setdefault(str(u.get("id") or name), uid)
-        slug_of.setdefault(uid, uid)
-        for fid in flows:
-            owner[fid] = name
-        use_cases.append({
-            "id": uid, "name": name, "summary": str(u.get("summary") or ""),
-            "kind": u.get("kind") if u.get("kind") in KINDS else "journey", "flows": flows,
-            "story": statements(_section(u, "story"), f"{name}, story"),
-            "how_it_works": statements(_section(u, "how_it_works"), f"{name}, how it works"),
-            "watch": statements(_section(u, "watch"), f"{name}, watch"),
-            "confidence": u.get("confidence") if u.get("confidence") in CONFIDENCE else "guess",
-        })
-    if not use_cases:
-        raise ProgrammeError("none of Claude's use cases refer to flows in the facts")
-    uc_of = {fid: u["id"] for u in use_cases for fid in u["flows"]}
+                self.problems.append(f"edges: unknown edge ID {e.get('id')}")
+        return edges
 
-    given = {}
-    for f in out.get("flows", []) if isinstance(out.get("flows"), list) else []:
-        if not isinstance(f, dict):
-            continue
-        if f.get("id") not in names:
-            problems.append(f"flows: unknown flow ID {f.get('id')}")
-        elif f["id"] not in given:
-            given[f["id"]] = f
-    flows = []
-    for fid in flow_ids:
-        f = given.get(fid)
-        if f is None:
-            problems.append(f"flows: no purpose given for {names[fid]}")
-            f = {"purpose": "", "role": "unknown", "evidence": [], "confidence": "guess"}
-        bad = [x for x in f.get("evidence", []) if x not in evidence_ids]
+    def systems(self, out):
+        systems = []
+        for s in _items(out.get("systems")):
+            if s.get("host") in self.facts["hosts"] and str(s.get("name") or "").strip():
+                systems.append({"host": s["host"], "name": str(s.get("name") or ""), "confidence": _choice(s.get("confidence"), CONFIDENCE, "guess")})
+            else:
+                self.problems.append(f"systems: host {s.get('host')} is not a webhook host in the facts")
+        return systems
+
+    def org_summary(self, out):
+        summary = out.get("org_summary") if isinstance(out.get("org_summary"), dict) else {}
+        bad = [x for x in summary.get("evidence", []) if x not in self.evidence_ids]
         if bad:
-            problems.append(f"flows: unknown evidence IDs {', '.join(map(str, bad[:5]))} for {names[fid]}")
-        ev = [x for x in f.get("evidence", []) if x in evidence_ids]
-        conf = f.get("confidence") if f.get("confidence") in CONFIDENCE else "guess"
-        if not ev and f.get("purpose") and conf != "guess":
-            problems.append(f"flows: the purpose of {names[fid]} cites no evidence in the facts, so it is shown as a guess")
-        flows.append({"id": fid, "purpose": str(f.get("purpose") or ""), "role": f.get("role") if f.get("role") in ROLES else "unknown",
-                      "use_case": uc_of.get(fid, ""), "evidence": ev, "confidence": conf if ev else "guess"})
-    not_placed = [fid for fid in flow_ids if fid not in uc_of]
+            self.problems.append(f"org summary: unknown evidence IDs {', '.join(map(str, bad[:5]))}")
+        ev = [x for x in summary.get("evidence", []) if x in self.evidence_ids]
+        if not ev and summary.get("text") and summary.get("confidence") != "guess":
+            self.problems.append("org summary: cites no evidence in the facts, so it is shown as a guess")
+        return {"text": str(summary.get("text") or ""), "evidence": ev,
+                "confidence": _choice(summary.get("confidence"), CONFIDENCE, "guess") if ev else "guess"}
 
-    edges = []
-    for e in out.get("edges", []) if isinstance(out.get("edges"), list) else []:
-        if isinstance(e, dict) and e.get("id") in edge_ids and str(e.get("meaning") or "").strip():
-            edges.append({"id": e["id"], "meaning": str(e["meaning"])})
-        elif isinstance(e, dict):
-            problems.append(f"edges: unknown edge ID {e.get('id')}")
-    systems = []
-    for s in out.get("systems", []) if isinstance(out.get("systems"), list) else []:
-        if isinstance(s, dict) and s.get("host") in facts["hosts"] and str(s.get("name") or "").strip():
-            systems.append({"host": s["host"], "name": str(s.get("name") or ""),
-                            "confidence": s.get("confidence") if s.get("confidence") in CONFIDENCE else "guess"})
-        elif isinstance(s, dict):
-            problems.append(f"systems: host {s.get('host')} is not a webhook host in the facts")
-
-    summary = out.get("org_summary") if isinstance(out.get("org_summary"), dict) else {}
-    bad = [x for x in summary.get("evidence", []) if x not in evidence_ids]
-    if bad:
-        problems.append(f"org summary: unknown evidence IDs {', '.join(map(str, bad[:5]))}")
-    ev = [x for x in summary.get("evidence", []) if x in evidence_ids]
-    if not ev and summary.get("text") and summary.get("confidence") != "guess":
-        problems.append("org summary: cites no evidence in the facts, so it is shown as a guess")
-    org_summary = {"text": str(summary.get("text") or ""), "evidence": ev,
-                   "confidence": (summary.get("confidence") if summary.get("confidence") in CONFIDENCE else "guess") if ev else "guess"}
-
-    programmes = _programmes(out, use_cases, statements, problems, slug_of)
-
-    meta = out.get("_meta") if isinstance(out.get("_meta"), dict) else {}
-    model = meta.get("model") if isinstance(meta.get("model"), str) else MODEL
-    return ({"model": model, "org_summary": org_summary, "programmes": programmes, "use_cases": use_cases, "flows": flows,
-             "not_placed": not_placed, "edges": edges, "systems": systems}, problems)
-
-
-def _programmes(out, use_cases, statements, problems, slug_of=None):
-    """Group the validated use cases into programmes. An answer without programmes (from before
-    they existed) gets one programme per use case; a use case left out of every programme gets
-    its own, and that is reported."""
-    by_id = {u["id"]: u for u in use_cases}
-    given = out.get("programmes")
-    if not isinstance(given, list):
-        return [_wrap(u) for u in use_cases]
-    owner, programmes, taken = {}, [], set()
-    for p in given:
-        if not isinstance(p, dict):
-            continue
-        name = str(p.get("name") or "Unnamed programme")
-        parts = []
-        for pid in p.get("parts", []) if isinstance(p.get("parts"), list) else []:
-            pid = (slug_of or {}).get(str(pid), pid)
-            if pid not in by_id:
-                problems.append(f"programme {name}: unknown use case ID {pid}")
-            elif pid in owner:
-                problems.append(f"programme {name}: use case {by_id[pid]['name']} is already in programme {owner[pid]}")
-            elif pid not in parts:
-                parts.append(pid)
-        if not parts:
-            problems.append(f"programme {name} was dropped because none of its parts are use cases in the answer")
-            continue
-        for pid in parts:
-            owner[pid] = name
-        programmes.append({
-            "id": _slug(p.get("id") or name, taken), "name": name, "summary": str(p.get("summary") or ""),
-            "kind": p.get("kind") if p.get("kind") in KINDS else by_id[parts[0]]["kind"], "parts": parts,
-            "story": statements(_section(p, "story"), f"{name}, story"),
-            "watch": statements(_section(p, "watch"), f"{name}, watch"),
-            "confidence": p.get("confidence") if p.get("confidence") in CONFIDENCE else "guess",
-        })
-    for u in use_cases:
-        if u["id"] not in owner:
-            problems.append(f"use case {u['name']} is not in any programme, so it is shown as its own")
-            programmes.append(_wrap(u, {p["id"] for p in programmes}))
-    return programmes
+    def programmes(self, out, use_cases, slug_of):
+        """Group the validated use cases into programmes. An answer without programmes (from before
+        they existed) gets one programme per use case; a use case left out of every programme gets
+        its own, and that is reported."""
+        by_id = {u["id"]: u for u in use_cases}
+        if not isinstance(out.get("programmes"), list):
+            return [_wrap(u) for u in use_cases]
+        owner, programmes, taken = {}, [], set()
+        for p in _items(out["programmes"]):
+            name = str(p.get("name") or "Unnamed programme")
+            parts = []
+            for pid in p.get("parts", []) if isinstance(p.get("parts"), list) else []:
+                pid = slug_of.get(str(pid), pid)
+                if pid not in by_id:
+                    self.problems.append(f"programme {name}: unknown use case ID {pid}")
+                elif pid in owner:
+                    self.problems.append(f"programme {name}: use case {by_id[pid]['name']} is already in programme {owner[pid]}")
+                elif pid not in parts:
+                    parts.append(pid)
+            if not parts:
+                self.problems.append(f"programme {name} was dropped because none of its parts are use cases in the answer")
+                continue
+            for pid in parts:
+                owner[pid] = name
+            programmes.append({
+                "id": _slug(p.get("id") or name, taken), "name": name, "summary": str(p.get("summary") or ""),
+                "kind": _choice(p.get("kind"), KINDS, by_id[parts[0]]["kind"]), "parts": parts,
+                "story": self.statements(_section(p, "story"), f"{name}, story"),
+                "watch": self.statements(_section(p, "watch"), f"{name}, watch"),
+                "confidence": _choice(p.get("confidence"), CONFIDENCE, "guess"),
+            })
+        for u in use_cases:
+            if u["id"] not in owner:
+                self.problems.append(f"use case {u['name']} is not in any programme, so it is shown as its own")
+                programmes.append(_wrap(u, {p["id"] for p in programmes}))
+        return programmes
 
 
 def _wrap(u, taken=()):
